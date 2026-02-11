@@ -25,6 +25,14 @@ export function askQuestion(question: string, model: ModelId): Promise<AskRespon
   });
 }
 
+export function submitFeedback(interactionId: string, feedback: "up" | "down"): Promise<{ status: string }> {
+  return fetchJSON("/api/feedback", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ interaction_id: interactionId, feedback }),
+  });
+}
+
 export function getDashboard(model: ModelId): Promise<DashboardResponse> {
   return fetchJSON("/api/dashboard", {
     method: "POST",

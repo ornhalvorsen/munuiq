@@ -35,10 +35,16 @@ export interface AskResponse {
   insight: string;
   chart: ChartSpec;
   model: string;
+  interaction_id?: string;
   provider?: string;
   sql_time_ms?: number;
   insight_time_ms?: number;
   query_time_ms?: number;
+  cached?: boolean;
+  cache_tier?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  estimated_cost_usd?: number;
 }
 
 export interface DashboardCard {

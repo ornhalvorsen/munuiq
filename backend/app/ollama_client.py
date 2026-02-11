@@ -3,6 +3,7 @@ import re
 import httpx
 from app.config import settings
 from app.schema import get_schema_context
+from app.question_parser import build_query_hints
 
 _client: httpx.Client | None = None
 
@@ -153,6 +154,7 @@ def _parse_json_array_response(text: str) -> list[dict]:
 def _build_sql_prompt(question: str, model: str) -> str:
     """Build model-specific SQL generation prompt."""
     schema_ctx = get_schema_context()
+    hints = build_query_hints(question)
     ollama_model = model.removeprefix("ollama:")
 
     if ollama_model == "duckdb-nsql":
@@ -165,6 +167,10 @@ DuckDB
 
 ### Schema
 {schema_ctx}
+
+### Instructions
+Always use table aliases and qualify every column with its alias to avoid ambiguous references.
+{hints}
 
 ### SQL
 """
@@ -181,14 +187,24 @@ IMPORTANT DuckDB syntax rules:
 - Use DATE_TRUNC('period', col) for date truncation
 - Use || for string concatenation
 - LIMIT {settings.row_limit} max rows
+- Always use table aliases and qualify every column with its alias to avoid ambiguous references
 
 Question: {question}
+{hints}
 
 Return ONLY the SQL query, no explanation, no code fences. SELECT only."""
 
 
-def generate_sql(question: str, model: str) -> str:
-    """Generate SQL via Ollama. Model should be like 'ollama:sqlcoder'."""
+def _usage(data: dict) -> dict:
+    """Extract token usage from an Ollama response."""
+    return {
+        "input_tokens": data.get("prompt_eval_count", 0),
+        "output_tokens": data.get("eval_count", 0),
+    }
+
+
+def generate_sql(question: str, model: str, customer_ids: list[int] | None = None) -> tuple[str, dict]:
+    """Generate SQL via Ollama. Returns (sql, usage)."""
     client = _get_client()
     ollama_model = model.removeprefix("ollama:")
 
@@ -204,16 +220,53 @@ def generate_sql(question: str, model: str) -> str:
         },
     )
     resp.raise_for_status()
-    raw = resp.json().get("response", "")
+    data = resp.json()
+    raw = data.get("response", "")
     sql = _extract_sql(raw)
     sql = _fixup_duckdb_sql(sql)
-    return sql
+    return sql, _usage(data)
+
+
+def fix_sql(question: str, sql: str, error: str, model: str) -> tuple[str, dict]:
+    """Fix a failed SQL query given the DuckDB error message. Returns (sql, usage)."""
+    client = _get_client()
+    ollama_model = model.removeprefix("ollama:")
+    schema_ctx = get_schema_context()
+
+    prompt = f"""Fix the DuckDB SQL query that produced an error.
+
+{schema_ctx}
+
+Question: {question}
+
+Failed SQL:
+{sql}
+
+Error: {error}
+
+Return ONLY the corrected SQL, no explanation, no code fences. SELECT only."""
+
+    resp = client.post(
+        "/api/generate",
+        json={
+            "model": ollama_model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {"temperature": 0, "num_predict": 512},
+        },
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    raw = data.get("response", "")
+    fixed = _extract_sql(raw)
+    fixed = _fixup_duckdb_sql(fixed)
+    return fixed, _usage(data)
 
 
 def generate_insight(
     question: str, sql: str, columns: list[str], data: list[list], model: str
-) -> dict:
-    """Generate insight using the Ollama insight model (Mistral). The SQL model parameter is ignored for insight generation."""
+) -> tuple[dict, dict]:
+    """Generate insight using the Ollama insight model. Returns (insight_dict, usage)."""
     client = _get_client()
     insight_model = settings.ollama_insight_model
 
@@ -242,8 +295,9 @@ SQL: {sql}
         },
     )
     resp.raise_for_status()
-    raw = resp.json().get("response", "")
-    return _parse_json_response(raw)
+    data_resp = resp.json()
+    raw = data_resp.get("response", "")
+    return _parse_json_response(raw), _usage(data_resp)
 
 
 def generate_dashboard_queries(model: str) -> list[dict]:

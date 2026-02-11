@@ -11,6 +11,16 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_insight_model: str = "mistral"
     ollama_timeout: int = 120
+    motherduck_logging_token: str = ""
+    motherduck_logging_database: str = "munuiq"
+    # Comma-separated list of additional schemas to expose (munu is always included)
+    extra_schemas: str = "admin,cakeiteasy,planday,reference"
+    # JWT auth
+    jwt_secret_key: str = ""
+    jwt_expire_minutes: int = 1440  # 24 hours
+    # Superadmin seed (created on first startup)
+    munuiq_admin_email: str = ""
+    munuiq_admin_password: str = ""
 
     model_config = {"env_file": Path(__file__).resolve().parent.parent / ".env"}
 

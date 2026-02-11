@@ -1,7 +1,10 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from app.models import DashboardRequest, DashboardResponse, DashboardCard, ChartSpec, ALLOWED_MODELS
 from app.llm_router import generate_dashboard_queries, generate_insight
 from app.database import execute_read_query
+from app.tenant_context import inject_customer_filter
+from app.auth.dependencies import get_optional_user
+from app.auth.models import UserInfo
 from app import cache
 
 router = APIRouter()
@@ -10,7 +13,11 @@ DASHBOARD_CACHE_TTL = 600  # 10 minutes
 
 
 @router.post("/api/dashboard", response_model=DashboardResponse)
-def get_dashboard(request_body: DashboardRequest, request: Request):
+def get_dashboard(
+    request_body: DashboardRequest,
+    request: Request,
+    user: UserInfo | None = Depends(get_optional_user),
+):
     model = request_body.model
     if model not in ALLOWED_MODELS:
         raise HTTPException(status_code=400, detail=f"Invalid model. Choose from: {sorted(ALLOWED_MODELS)}")
@@ -23,6 +30,8 @@ def get_dashboard(request_body: DashboardRequest, request: Request):
                 status_code=503,
                 detail="Ollama is not running. Start it with: ollama serve",
             )
+
+    customer_ids = user.customer_ids if user else []
 
     cache_key = f"dashboard:{model}"
     cached = cache.get(cache_key)
@@ -44,13 +53,17 @@ def get_dashboard(request_body: DashboardRequest, request: Request):
         if not sql:
             continue
 
+        # Apply tenant filter
+        if customer_ids:
+            sql = inject_customer_filter(sql, customer_ids)
+
         try:
             columns, data = execute_read_query(sql)
         except Exception:
             continue
 
         try:
-            insight_data = generate_insight(title, sql, columns, data, model)
+            insight_data, _ = generate_insight(title, sql, columns, data, model)
         except Exception:
             insight_data = {
                 "insight": f"Data for: {title}",

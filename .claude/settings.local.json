@@ -21,7 +21,25 @@
       "Bash(powershell -Command:*)",
       "Bash(git init:*)",
       "Bash(git remote add:*)",
-      "Bash(git fetch:*)"
+      "Bash(git fetch:*)",
+      "Bash(git commit:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)",
+      "Bash(netstat:*)",
+      "Bash(xargs:*)",
+      "Bash(wmic process where \"name=''python.exe'' or name=''python3.exe'' or name=''uvicorn.exe''\" get processid,commandline)",
+      "Bash(tasklist:*)",
+      "Bash(cmd /c \"tasklist /fi \"\"PID eq 11548\"\"\")",
+      "Bash(npx create-next-app:*)",
+      "Bash(if exist frontend-next rmdir /s /q frontend-next)",
+      "Bash(npx create-next-app@latest:*)",
+      "Bash(npx shadcn@latest init:*)",
+      "Bash(npx shadcn@latest add:*)",
+      "Bash(npx next build:*)",
+      "Bash(powershell \"netstat -ano | Select-String '':8000.*LISTEN''\")",
+      "Bash(powershell \"Stop-Process -Id 25692 -Force\")",
+      "Bash(git status:*)",
+      "Bash(git add:*)"
     ]
   }
 }
