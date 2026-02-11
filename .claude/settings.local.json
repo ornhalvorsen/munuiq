@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "WebSearch",
+      "WebFetch(domain:motherduck.com)",
+      "WebFetch(domain:duckdb.org)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(pip install:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(python:*)",
+      "Bash(npx vite build)",
+      "Bash(cd:*)",
+      "Bash(dir:*)",
+      "Bash(curl:*)",
+      "Bash(taskkill:*)",
+      "Bash(npm run dev:*)",
+      "Bash(findstr:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(git init:*)",
+      "Bash(git remote add:*)",
+      "Bash(git fetch:*)"
+    ]
+  }
+}

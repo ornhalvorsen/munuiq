@@ -1,0 +1,100 @@
+import json
+import anthropic
+from app.config import settings
+from app.schema import get_schema_context
+
+_client: anthropic.Anthropic | None = None
+
+
+def get_client() -> anthropic.Anthropic:
+    global _client
+    if _client is None:
+        _client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    return _client
+
+
+def generate_sql(question: str, model: str) -> str:
+    """Generate a SQL query from a natural language question."""
+    client = get_client()
+    schema_ctx = get_schema_context()
+
+    response = client.messages.create(
+        model=model,
+        max_tokens=512,
+        temperature=0,
+        system=f"""SQL expert for DuckDB. Generate one SELECT query answering the question.
+
+{schema_ctx}
+
+Rules: ONLY the SQL, no explanation, no fences. SELECT only. LIMIT {settings.row_limit}. DuckDB syntax.""",
+        messages=[{"role": "user", "content": question}],
+    )
+    return response.content[0].text.strip()
+
+
+def generate_insight(question: str, sql: str, columns: list[str], data: list[list], model: str) -> dict:
+    """Generate a narrative insight and chart spec from query results."""
+    client = get_client()
+
+    data_preview = data[:15]
+    data_text = json.dumps({"columns": columns, "rows": data_preview}, default=str, separators=(",", ":"))
+    if len(data) > 15:
+        data_text += f"\n...({len(data)} rows total)"
+
+    response = client.messages.create(
+        model=model,
+        max_tokens=512,
+        temperature=0.3,
+        system="""Analyze SQL results for restaurant dashboard. Return JSON only:
+{"insight":"1-2 sentences","chart_type":"bar|line|none","x_key":"col","y_key":"col","title":"short"}
+No fences. x_key/y_key must be actual column names. bar=categorical, line=time series, none=not chartable.""",
+        messages=[
+            {
+                "role": "user",
+                "content": f"Q: {question}\nSQL: {sql}\n{data_text}",
+            }
+        ],
+    )
+
+    text = response.content[0].text.strip()
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        parsed = {
+            "insight": text,
+            "chart_type": "none",
+            "x_key": "",
+            "y_key": "",
+            "title": "",
+        }
+    return parsed
+
+
+def generate_dashboard_queries(model: str) -> list[dict]:
+    """Generate 4 interesting dashboard queries based on the schema."""
+    client = get_client()
+    schema_ctx = get_schema_context()
+
+    response = client.messages.create(
+        model=model,
+        max_tokens=1024,
+        temperature=0.3,
+        system=f"""Restaurant analytics expert. Given schema, generate 4 dashboard cards.
+
+{schema_ctx}
+
+Return JSON array of 4 objects: [{{"title":"...","sql":"SELECT ... LIMIT 50"}}]
+No fences. Diverse insights (revenue, top items, busiest periods, categories). SELECT only.""",
+        messages=[
+            {
+                "role": "user",
+                "content": "Generate 4 diverse dashboard queries.",
+            }
+        ],
+    )
+
+    text = response.content[0].text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return []
