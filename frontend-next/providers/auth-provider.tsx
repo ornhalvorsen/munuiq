@@ -6,6 +6,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
   ReactNode,
 } from "react";
 import { createClient } from "@/lib/supabase";
@@ -28,52 +29,36 @@ const AuthContext = createContext<AuthContextType>({
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const supabase = createClient();
+  const supabaseRef = useRef(createClient());
 
-  // Load internal user info after Supabase session is available
-  const loadUser = useCallback(async () => {
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+  useEffect(() => {
+    const supabase = supabaseRef.current;
+
+    // Load user on mount if session exists
+    supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
-        const me = await getMe();
-        setUser(me);
+        getMe().then(setUser).catch(() => setUser(null));
       } else {
         setUser(null);
       }
-    } catch {
-      setUser(null);
-    } finally {
       setIsLoading(false);
-    }
-  }, [supabase]);
+    });
 
-  useEffect(() => {
-    loadUser();
-
-    // Listen for auth state changes (login, logout, token refresh)
+    // Listen for auth state changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event) => {
-      if (event === "SIGNED_IN") {
-        try {
-          const me = await getMe();
-          setUser(me);
-        } catch {
-          setUser(null);
-        }
-      } else if (event === "SIGNED_OUT") {
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") {
         setUser(null);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [loadUser, supabase]);
+  }, []);
 
   const login = useCallback(
     async (email: string, password: string) => {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabaseRef.current.auth.signInWithPassword({
         email,
         password,
       });
@@ -83,14 +68,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const me = await getMe();
       setUser(me);
     },
-    [supabase]
+    []
   );
 
   const logout = useCallback(async () => {
-    await supabase.auth.signOut();
+    await supabaseRef.current.auth.signOut();
     setUser(null);
     window.location.href = "/login";
-  }, [supabase]);
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, isLoading, login, logout }}>
