@@ -117,12 +117,14 @@ def connect():
 
         # Migrate existing tables: add supabase_id column if missing
         try:
-            _conn.execute("ALTER TABLE users ADD COLUMN supabase_id VARCHAR UNIQUE")
+            _conn.execute("ALTER TABLE users ADD COLUMN supabase_id VARCHAR")
             print("Management DB: added supabase_id column to users table.")
         except Exception:
             pass  # Column already exists
-
-        # Make password_hash nullable (DuckDB doesn't support ALTER COLUMN, so skip if already nullable)
+        try:
+            _conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_supabase_id ON users(supabase_id)")
+        except Exception:
+            pass
 
         print("Management DB connected and tables ensured.")
     except Exception as e:
