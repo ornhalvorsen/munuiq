@@ -30,6 +30,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const supabaseRef = useRef(createClient());
+  // Track if password login is in progress to avoid duplicate getMe() calls
+  const loginInProgressRef = useRef(false);
 
   useEffect(() => {
     const supabase = supabaseRef.current;
@@ -44,11 +46,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
     });
 
-    // Listen for auth state changes
+    // Listen for auth state changes (handles magic link + sign out)
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT") {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && session && !loginInProgressRef.current) {
+        // Magic link or token refresh — load user from backend
+        getMe()
+          .then(setUser)
+          .catch(() => setUser(null))
+          .finally(() => setIsLoading(false));
+      } else if (event === "SIGNED_OUT") {
         setUser(null);
       }
     });
@@ -58,15 +66,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (email: string, password: string) => {
-      const { error } = await supabaseRef.current.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (error) throw new Error(error.message);
+      loginInProgressRef.current = true;
+      try {
+        const { error } = await supabaseRef.current.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (error) throw new Error(error.message);
 
-      // Fetch internal user info from backend
-      const me = await getMe();
-      setUser(me);
+        // Fetch internal user info from backend
+        const me = await getMe();
+        setUser(me);
+      } finally {
+        loginInProgressRef.current = false;
+      }
     },
     []
   );
