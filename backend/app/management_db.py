@@ -214,7 +214,7 @@ def create_user(email: str, name: str, role: str = "viewer", supabase_id: str = 
     try:
         with _lock:
             _conn.execute(
-                "INSERT INTO users (email, name, role, supabase_id) VALUES (?, ?, ?, ?)",
+                "INSERT INTO users (email, password_hash, name, role, supabase_id) VALUES (?, 'supabase-managed', ?, ?, ?)",
                 [email, name, role, supabase_id],
             )
         return get_user_by_email(email)
