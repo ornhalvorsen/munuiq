@@ -1,4 +1,4 @@
-# MUNUIQ Development Guide
+# AnalyticsIQ Development Guide
 
 > Setup, workflow, and day-to-day conventions.
 

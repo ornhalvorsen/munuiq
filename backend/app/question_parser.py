@@ -134,14 +134,14 @@ _LABOR_RE = re.compile(
 )
 
 _DATE_HINTS = {
-    "today": "o.order_date = CURRENT_DATE",
-    "yesterday": "o.order_date = CURRENT_DATE - INTERVAL '1 day'",
-    "this_week": "o.order_date >= DATE_TRUNC('week', CURRENT_DATE)",
-    "last_week": "o.order_date >= DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '7 days' AND o.order_date < DATE_TRUNC('week', CURRENT_DATE)",
-    "this_month": "o.order_date >= DATE_TRUNC('month', CURRENT_DATE)",
-    "last_month": "o.order_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month' AND o.order_date < DATE_TRUNC('month', CURRENT_DATE)",
-    "this_year": "o.order_date >= DATE_TRUNC('year', CURRENT_DATE)",
-    "last_year": "o.order_date >= DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 year' AND o.order_date < DATE_TRUNC('year', CURRENT_DATE)",
+    "today": "sf.order_date = CURRENT_DATE",
+    "yesterday": "sf.order_date = CURRENT_DATE - INTERVAL '1 day'",
+    "this_week": "sf.order_date >= DATE_TRUNC('week', CURRENT_DATE)",
+    "last_week": "sf.order_date >= DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '7 days' AND sf.order_date < DATE_TRUNC('week', CURRENT_DATE)",
+    "this_month": "sf.order_date >= DATE_TRUNC('month', CURRENT_DATE)",
+    "last_month": "sf.order_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month' AND sf.order_date < DATE_TRUNC('month', CURRENT_DATE)",
+    "this_year": "sf.order_date >= DATE_TRUNC('year', CURRENT_DATE)",
+    "last_year": "sf.order_date >= DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 year' AND sf.order_date < DATE_TRUNC('year', CURRENT_DATE)",
 }
 
 
@@ -158,36 +158,29 @@ def build_query_hints(question: str) -> str:
 
     has_location_match = bool(parsed["matched_locations"])
 
-    # Core sales/order data
+    # Core sales/order/location/product/category data → sales_fact (no JOINs needed)
     if is_sales or is_revenue or is_location or has_location_match or parsed["matched_products"]:
         hints.append(
-            "Sales data: munu.order_lines ol "
-            "JOIN munu.orders o ON ol.customer_id = o.customer_id AND ol.soid = o.soid"
-        )
-
-    # Location names (revenue_units, NOT installations — orders.inid is always empty)
-    if is_location or has_location_match:
-        hints.append(
-            "Location names: JOIN munu.revenue_units ru "
-            "ON o.customer_id = ru.customer_id AND o.revenue_unit_id = ru.revenue_unit_id — use ru.name for location"
+            "Use: munuiq.sales_fact sf — has location_name, product_name, category, "
+            "net_amount, quantity, order_date (no JOINs needed)"
         )
 
     # Specific location filter
     for loc in parsed["matched_locations"]:
-        hints.append(f"Location filter: ru.name = '{loc}'")
+        hints.append(f"Location filter: sf.location_name = '{loc}'")
         break  # Only use the first match to avoid conflicting filters
 
     # Product matching
     for stem in parsed["matched_products"]:
-        hints.append(f"Product filter: ol.article_name ILIKE '%{stem}%'")
+        hints.append(f"Product filter: sf.product_name ILIKE '%{stem}%'")
 
     # Revenue
     if is_revenue:
-        hints.append("Revenue: SUM(ol.net_amount) or o.total_amount")
+        hints.append("Revenue: SUM(sf.net_amount) or sf.order_total")
 
     # Quantity
     if is_sales and not is_revenue:
-        hints.append("Quantity: SUM(ol.quantity)")
+        hints.append("Quantity: SUM(sf.quantity)")
 
     # Date filter
     if parsed["time_period"] and parsed["time_period"] in _DATE_HINTS:
@@ -196,8 +189,8 @@ def build_query_hints(question: str) -> str:
     # Category
     if _CATEGORY_RE.search(question):
         hints.append(
-            "Categories: JOIN munu.articles a ON ol.article_id = a.article_id "
-            "AND ol.customer_id = a.customer_id — use a.article_group_name"
+            "Categories: sf.category (unified) or sf.raw_category (original) "
+            "from munuiq.sales_fact sf"
         )
 
     # Payment

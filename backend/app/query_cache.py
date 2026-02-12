@@ -212,6 +212,18 @@ def put_cached_response(question: str, model: str, response_dict: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Cache invalidation
+# ---------------------------------------------------------------------------
+
+def clear_all() -> None:
+    """Invalidate all caches. Called after onboarding approval changes category mappings."""
+    _response_store.clear()
+    _sql_store.clear()
+    _common_sql.clear()
+    init_common_questions()  # regenerate with current schema context
+
+
+# ---------------------------------------------------------------------------
 # Stats
 # ---------------------------------------------------------------------------
 

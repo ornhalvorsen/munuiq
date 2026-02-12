@@ -1,8 +1,8 @@
 #!/bin/bash
-# MUNUIQ - Start backend server
+# AnalyticsIQ - Start backend server
 # Single backend on port 8000 handles both Claude and Ollama models
 
-echo "Starting MUNUIQ backend on port 8000..."
+echo "Starting AnalyticsIQ backend on port 8000..."
 
 # Check if Ollama is running
 if curl -s --max-time 2 http://localhost:11434/api/tags > /dev/null 2>&1; then

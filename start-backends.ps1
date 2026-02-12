@@ -1,7 +1,7 @@
-# MUNUIQ - Start backend server
+# AnalyticsIQ - Start backend server
 # Single backend on port 8000 handles both Claude and Ollama models
 
-Write-Host "Starting MUNUIQ backend on port 8000..." -ForegroundColor Cyan
+Write-Host "Starting AnalyticsIQ backend on port 8000..." -ForegroundColor Cyan
 
 # Check if Ollama is running
 try {

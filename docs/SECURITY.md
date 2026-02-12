@@ -1,6 +1,6 @@
-# MUNUIQ Security Guide
+# AnalyticsIQ Security Guide
 
-> Security patterns and requirements for the MUNUIQ platform.
+> Security patterns and requirements for the AnalyticsIQ platform.
 
 ---
 
@@ -130,7 +130,7 @@ class AskQuestionCommand(BaseModel):
 
 ## SQL Injection Prevention
 
-This is the **highest-risk area** in MUNUIQ because the system generates SQL from natural language. Multiple defenses are required.
+This is the **highest-risk area** in AnalyticsIQ because the system generates SQL from natural language. Multiple defenses are required.
 
 ### Layer 1: Domain-Level SQL Validation
 
@@ -489,7 +489,7 @@ def create_app() -> FastAPI:
     settings = Settings()
 
     app = FastAPI(
-        title="MUNUIQ API",
+        title="AnalyticsIQ API",
         version="1.0.0",
         # Disable docs in production
         docs_url="/api/docs" if settings.debug else None,

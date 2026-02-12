@@ -1,5 +1,6 @@
 """FastAPI dependencies for authentication and authorization."""
 
+import json
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.auth.jwt_handler import decode_token
@@ -13,13 +14,10 @@ def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> UserInfo:
-    """Decode JWT and load user with tenant customer_ids."""
-    # Also check cookie for Next.js httpOnly cookie auth
+    """Decode Supabase JWT and load user with tenant customer_ids."""
     token = None
     if credentials:
         token = credentials.credentials
-    else:
-        token = request.cookies.get("munuiq_token")
 
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -28,18 +26,37 @@ def get_current_user(
     if payload is None:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    user_id = payload.get("sub")
-    user = management_db.get_user_by_id(user_id)
-    if user is None or not user["is_active"]:
-        raise HTTPException(status_code=401, detail="User not found or inactive")
+    supabase_id = payload.get("sub")  # Supabase UUID string
+    email = payload.get("email")
+
+    if not supabase_id:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+
+    # Lookup by supabase_id first
+    user = management_db.get_user_by_supabase_id(supabase_id)
+
+    # Auto-link: if no user found by supabase_id, try email match
+    if user is None and email:
+        user = management_db.get_user_by_email(email)
+        if user is not None:
+            # Link this Supabase account to the existing internal user
+            management_db.link_supabase_id(user["id"], supabase_id)
+
+    if user is None:
+        raise HTTPException(
+            status_code=403,
+            detail="No internal account found. Contact your administrator.",
+        )
+
+    if not user["is_active"]:
+        raise HTTPException(status_code=401, detail="Account is disabled")
 
     # Load tenant info
-    tenant = management_db.get_user_tenant(user_id)
+    tenant = management_db.get_user_tenant(user["id"])
     customer_ids = []
     tenant_id = None
     tenant_name = None
     if tenant:
-        import json
         customer_ids = json.loads(tenant["customer_ids"])
         tenant_id = tenant["id"]
         tenant_name = tenant["name"]

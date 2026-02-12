@@ -27,7 +27,6 @@ export function listUsers() {
 
 export function createUser(data: {
   email: string;
-  password: string;
   name: string;
   role?: string;
 }) {

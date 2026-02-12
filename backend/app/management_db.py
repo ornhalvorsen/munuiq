@@ -18,7 +18,8 @@ CREATE SEQUENCE IF NOT EXISTS users_seq START 1;
 CREATE TABLE IF NOT EXISTS users (
     id            INTEGER PRIMARY KEY DEFAULT nextval('users_seq'),
     email         VARCHAR NOT NULL UNIQUE,
-    password_hash VARCHAR NOT NULL,
+    password_hash VARCHAR,
+    supabase_id   VARCHAR UNIQUE,
     name          VARCHAR NOT NULL,
     role          VARCHAR NOT NULL DEFAULT 'viewer',
     is_active     BOOLEAN NOT NULL DEFAULT true,
@@ -114,6 +115,15 @@ def connect():
                         if "already exists" not in str(e).lower():
                             print(f"Management DB: DDL warning — {e}")
 
+        # Migrate existing tables: add supabase_id column if missing
+        try:
+            _conn.execute("ALTER TABLE users ADD COLUMN supabase_id VARCHAR UNIQUE")
+            print("Management DB: added supabase_id column to users table.")
+        except Exception:
+            pass  # Column already exists
+
+        # Make password_hash nullable (DuckDB doesn't support ALTER COLUMN, so skip if already nullable)
+
         print("Management DB connected and tables ensured.")
     except Exception as e:
         print(f"Management DB: connection failed — {e}")
@@ -177,6 +187,10 @@ def _execute(sql: str, params: list = None) -> bool:
 
 # ─── User CRUD ───────────────────────────────────────────────────────
 
+def get_user_by_supabase_id(supabase_id: str) -> dict | None:
+    return _fetchone("SELECT * FROM users WHERE supabase_id = ?", [supabase_id])
+
+
 def get_user_by_email(email: str) -> dict | None:
     return _fetchone("SELECT * FROM users WHERE email = ?", [email])
 
@@ -191,15 +205,15 @@ def list_users() -> list[dict]:
     )
 
 
-def create_user(email: str, password_hash: str, name: str, role: str = "viewer") -> dict | None:
+def create_user(email: str, name: str, role: str = "viewer", supabase_id: str = None) -> dict | None:
     """Create a user and return the created row."""
     if _conn is None:
         return None
     try:
         with _lock:
             _conn.execute(
-                "INSERT INTO users (email, password_hash, name, role) VALUES (?, ?, ?, ?)",
-                [email, password_hash, name, role],
+                "INSERT INTO users (email, name, role, supabase_id) VALUES (?, ?, ?, ?)",
+                [email, name, role, supabase_id],
             )
         return get_user_by_email(email)
     except Exception as e:
@@ -214,7 +228,7 @@ def update_user(user_id: int, **kwargs) -> bool:
     sets = []
     params = []
     for k, v in kwargs.items():
-        if k in ("email", "name", "role", "is_active", "password_hash") and v is not None:
+        if k in ("email", "name", "role", "is_active", "supabase_id") and v is not None:
             sets.append(f"{k} = ?")
             params.append(v)
     if not sets:
@@ -404,15 +418,9 @@ def bulk_update_mappings(updates: list[dict]) -> bool:
 
 # ─── Admin Seed ──────────────────────────────────────────────────────
 
-def seed_superadmin(email: str, password_hash: str):
-    """Create the initial superadmin if no users exist."""
-    if _conn is None:
-        return
-    existing = get_user_by_email(email)
-    if existing:
-        return
-    user_count = _fetchone("SELECT count(*) as cnt FROM users")
-    if user_count and user_count["cnt"] > 0:
-        return
-    create_user(email=email, password_hash=password_hash, name="Admin", role="superadmin")
-    print(f"Management DB: seeded superadmin {email}")
+def link_supabase_id(user_id: int, supabase_id: str) -> bool:
+    """Link a Supabase UUID to an existing internal user."""
+    return _execute(
+        "UPDATE users SET supabase_id = ? WHERE id = ?",
+        [supabase_id, user_id],
+    )

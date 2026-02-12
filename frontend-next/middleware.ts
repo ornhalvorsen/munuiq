@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
 
 const PUBLIC_PATHS = ["/login", "/register"];
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Allow public paths
@@ -20,27 +21,38 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check for auth cookie
-  const token = request.cookies.get("munuiq_token");
-  if (!token) {
-    return NextResponse.redirect(new URL("/login", request.url));
-  }
+  // Create Supabase server client to check session from cookies
+  let response = NextResponse.next({
+    request: { headers: request.headers },
+  });
 
-  // Basic JWT expiry check (decode payload without verification)
-  try {
-    const payload = JSON.parse(
-      Buffer.from(token.value.split(".")[1], "base64").toString()
-    );
-    if (payload.exp && payload.exp * 1000 < Date.now()) {
-      const response = NextResponse.redirect(new URL("/login", request.url));
-      response.cookies.delete("munuiq_token");
-      return response;
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            request.cookies.set(name, value);
+            response.cookies.set(name, value, options);
+          });
+        },
+      },
     }
-  } catch {
+  );
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  return NextResponse.next();
+  return response;
 }
 
 export const config = {

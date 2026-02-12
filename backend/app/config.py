@@ -15,12 +15,12 @@ class Settings(BaseSettings):
     motherduck_logging_database: str = "munuiq"
     # Comma-separated list of additional schemas to expose (munu is always included)
     extra_schemas: str = "admin,cakeiteasy,planday,reference"
-    # JWT auth
-    jwt_secret_key: str = ""
-    jwt_expire_minutes: int = 1440  # 24 hours
-    # Superadmin seed (created on first startup)
-    munuiq_admin_email: str = ""
-    munuiq_admin_password: str = ""
+    # Supabase auth
+    supabase_jwt_secret: str = ""
+    supabase_url: str = ""
+    supabase_service_role_key: str = ""
+    # Frontend URL for CORS (production)
+    frontend_url: str = ""
 
     model_config = {"env_file": Path(__file__).resolve().parent.parent / ".env"}
 

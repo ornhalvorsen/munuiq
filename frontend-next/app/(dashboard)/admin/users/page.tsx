@@ -44,7 +44,6 @@ export default function UsersPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({
     email: "",
-    password: "",
     name: "",
     role: "viewer",
   });
@@ -68,7 +67,7 @@ export default function UsersPage() {
     try {
       await createUser(form);
       setDialogOpen(false);
-      setForm({ email: "", password: "", name: "", role: "viewer" });
+      setForm({ email: "", name: "", role: "viewer" });
       loadUsers();
     } catch (err) {
       console.error(err);
@@ -127,16 +126,6 @@ export default function UsersPage() {
                   value={form.email}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, email: e.target.value }))
-                  }
-                />
-              </div>
-              <div>
-                <Label>Password</Label>
-                <Input
-                  type="password"
-                  value={form.password}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, password: e.target.value }))
                   }
                 />
               </div>

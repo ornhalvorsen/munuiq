@@ -1,6 +1,10 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from app.models import ALLOWED_MODELS
 from app.config import settings
 from app.database import connect, close
@@ -9,6 +13,9 @@ from app.ollama_client import check_ollama_available, close_http_client
 from app import logging_db, management_db
 from app.routes import ask, dashboard, schema_route, feedback, interactions, auth_routes, admin_routes, onboarding_routes
 from app import query_cache
+from app.sales_view import create_sales_view
+
+limiter = Limiter(key_func=get_remote_address)
 
 
 @asynccontextmanager
@@ -30,14 +37,7 @@ async def lifespan(app: FastAPI):
 
     # Connect management DB and create auth/tenant tables
     management_db.connect()
-
-    # Seed superadmin if configured
-    if settings.munuiq_admin_email and settings.munuiq_admin_password:
-        from app.auth.passwords import hash_password
-        management_db.seed_superadmin(
-            email=settings.munuiq_admin_email,
-            password_hash=hash_password(settings.munuiq_admin_password),
-        )
+    create_sales_view()
 
     # Probe Ollama
     ollama_ok, ollama_models = check_ollama_available()
@@ -57,11 +57,28 @@ async def lifespan(app: FastAPI):
     print("Disconnected from MotherDuck.")
 
 
-app = FastAPI(title="MUNUIQ - Restaurant AI Analytics", lifespan=lifespan)
+app = FastAPI(title="AnalyticsIQ - Restaurant AI Analytics", lifespan=lifespan)
+
+# Rate limiting
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Rate limit exceeded. Please try again later."},
+    )
+
+
+# Dynamic CORS: always allow localhost for dev, plus FRONTEND_URL for production
+cors_origins = ["http://localhost:5173", "http://localhost:3000"]
+if settings.frontend_url:
+    cors_origins.append(settings.frontend_url)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

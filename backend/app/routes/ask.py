@@ -9,13 +9,17 @@ from app.auth.dependencies import get_optional_user
 from app.auth.models import UserInfo
 from app import logging_db, query_cache
 from app.question_parser import parse_question
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 MAX_SQL_RETRIES = 1
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.post("/api/ask", response_model=AskResponse)
+@limiter.limit("20/minute")
 def ask(
     request_body: AskRequest,
     request: Request,

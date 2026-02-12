@@ -5,7 +5,6 @@ from app.auth.models import (
     UserInfo, CreateUserRequest, UpdateUserRequest,
     CreateTenantRequest, UpdateTenantRequest, AssignTenantRequest,
 )
-from app.auth.passwords import hash_password
 from app.auth.dependencies import require_admin, require_superadmin
 from app import management_db
 
@@ -34,10 +33,8 @@ def create_user(body: CreateUserRequest, user: UserInfo = Depends(require_admin)
     if existing:
         raise HTTPException(status_code=409, detail="Email already in use")
 
-    pw_hash = hash_password(body.password)
     created = management_db.create_user(
         email=body.email,
-        password_hash=pw_hash,
         name=body.name,
         role=body.role,
     )

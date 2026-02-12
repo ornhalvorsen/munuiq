@@ -24,7 +24,7 @@ export default function App() {
 
   return (
     <div style={{ maxWidth: 960, margin: "0 auto", padding: "20px 16px" }}>
-      <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>MUNUIQ</h1>
+      <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>AnalyticsIQ</h1>
       <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 16 }}>
         Restaurant AI Analytics
       </p>

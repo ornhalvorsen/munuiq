@@ -375,26 +375,16 @@ def get_summary(customer_id: int) -> dict:
 
 
 def approve_onboarding(customer_id: int, user_id: int) -> dict:
-    """Write approved mappings to production tables."""
-    results = {"categories_written": 0, "products_written": 0, "errors": []}
-
-    # Write approved category mappings to article_category_map
+    """Finalize onboarding. Approved mappings are already in onboarding_mappings
+    and automatically reflected in the sales_fact view."""
     categories = management_db.get_mappings(customer_id, "category")
     approved_cats = [m for m in categories if m["status"] == "approved"]
 
-    for cat in approved_cats:
-        try:
-            source_parts = cat["source_key"].split("|", 1)
-            group_name = source_parts[0] if source_parts else ""
-            final_value = cat.get("final_value") or cat["proposed_value"]
-            # This would write to munu.article_category_map in production
-            # For now, log the intent
-            print(f"[ONBOARDING] Would write category: {group_name} → {final_value}")
-            results["categories_written"] += 1
-        except Exception as e:
-            results["errors"].append(f"Category write failed: {e}")
+    # Clear query caches so new queries use updated category mappings
+    from app import query_cache
+    query_cache.clear_all()
 
-    # Update onboarding state
+    # Update onboarding state to completed
     state = management_db.get_onboarding_state(customer_id)
     if state:
         completed_steps = json.loads(state.get("completed_steps", "[]")) if isinstance(state.get("completed_steps"), str) else state.get("completed_steps", [])
@@ -404,4 +394,8 @@ def approve_onboarding(customer_id: int, user_id: int) -> dict:
             customer_id, "completed", completed_steps,
         )
 
-    return results
+    return {
+        "categories_written": len(approved_cats),
+        "products_written": 0,
+        "errors": [],
+    }

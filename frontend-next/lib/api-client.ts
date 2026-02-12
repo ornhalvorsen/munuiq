@@ -1,3 +1,5 @@
+import { createClient } from "@/lib/supabase";
+
 const API_BASE = "/api/v1";
 
 export class ApiError extends Error {
@@ -14,13 +16,25 @@ export async function fetchJSON<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
+
+  // Get access token from Supabase session
+  const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options.headers as Record<string, string>),
+  };
+
+  if (session?.access_token) {
+    headers["Authorization"] = `Bearer ${session.access_token}`;
+  }
+
   const res = await fetch(url, {
     ...options,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
+    headers,
   });
 
   if (res.status === 401) {

@@ -51,7 +51,7 @@ export function Sidebar() {
     >
       <div className="flex h-14 items-center justify-between border-b px-3">
         {!collapsed && (
-          <span className="text-lg font-semibold tracking-tight">MUNUIQ</span>
+          <span className="text-lg font-semibold tracking-tight">AnalyticsIQ</span>
         )}
         <Button
           variant="ghost"

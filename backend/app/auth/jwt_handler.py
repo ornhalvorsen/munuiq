@@ -1,28 +1,35 @@
-"""JWT token creation and decoding."""
+"""Decode and verify Supabase-issued JWTs using JWKS."""
 
-import time
 import jwt
+from jwt import PyJWKClient
 from app.config import settings
 
+_jwks_client: PyJWKClient | None = None
 
-def create_token(user_id: int, email: str, role: str) -> str:
-    """Create a signed JWT token."""
-    now = int(time.time())
-    payload = {
-        "sub": user_id,
-        "email": email,
-        "role": role,
-        "iat": now,
-        "exp": now + settings.jwt_expire_minutes * 60,
-    }
-    return jwt.encode(payload, settings.jwt_secret_key, algorithm="HS256")
+
+def _get_jwks_client() -> PyJWKClient:
+    """Lazy-init JWKS client that fetches public keys from Supabase."""
+    global _jwks_client
+    if _jwks_client is None:
+        jwks_url = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
+        _jwks_client = PyJWKClient(jwks_url, cache_keys=True)
+    return _jwks_client
 
 
 def decode_token(token: str) -> dict | None:
-    """Decode and validate a JWT token. Returns payload or None."""
+    """Decode and validate a Supabase JWT using JWKS. Returns payload or None."""
     try:
-        return jwt.decode(token, settings.jwt_secret_key, algorithms=["HS256"])
+        client = _get_jwks_client()
+        signing_key = client.get_signing_key_from_jwt(token)
+        return jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["ES256"],
+            audience="authenticated",
+        )
     except jwt.ExpiredSignatureError:
         return None
     except jwt.InvalidTokenError:
+        return None
+    except Exception:
         return None

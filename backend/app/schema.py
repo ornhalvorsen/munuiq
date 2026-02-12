@@ -42,6 +42,28 @@ _INCLUDED_SCHEMAS = {"munu"} | {s.strip() for s in settings.extra_schemas.split(
 # Internal/ETL tables to hide from the LLM
 _EXCLUDED_TABLES = {"_etl_state", "test_write"}
 
+# Tables already fully covered by sales_fact — hide from the supplementary list
+_SALES_FACT_TABLES = {"munu.orders", "munu.order_lines", "munu.articles", "munu.revenue_units"}
+
+# Supplementary tables worth keeping for queries sales_fact can't answer
+_SUPPLEMENTARY_TABLES = {
+    "munu.order_payments", "munu.payment_types", "munu.article_waste",
+    "munu.labor_shifts", "munu.business_units", "munu.installations",
+    "planday.punchclock_shifts", "planday.departments",
+}
+
+_SALES_FACT_SCHEMA = (
+    "PRIMARY TABLE — use for all sales, revenue, location, product, and category queries:\n"
+    "munuiq.sales_fact(customer_id:INT, order_date:DATE, soid:INT, location_name:STR, "
+    "revenue_unit_id:INT, product_name:STR, raw_category:STR, category:STR, "
+    "quantity:FLOAT, net_amount:FLOAT, gross_amount:FLOAT, order_total:FLOAT)\n"
+    "  location_name = store/outlet name\n"
+    "  product_name = article name (match with ILIKE '%stem%')\n"
+    "  category = unified category (use for category/group breakdowns)\n"
+    "  net_amount = revenue after discounts\n"
+    "  No JOINs needed — just SELECT ... FROM munuiq.sales_fact WHERE ..."
+)
+
 
 def discover_schema() -> str:
     """Query information_schema.columns and build a compact text description."""
@@ -74,17 +96,29 @@ def discover_schema() -> str:
 
     _table_count = len(tables)
 
-    # Compact format: TABLE_NAME(col1:TYPE, col2:TYPE, ...)
-    lines = ["SCHEMA:"]
-    for table_name, columns in tables.items():
-        lines.append(f"{table_name}({', '.join(columns)})")
+    # Build structured schema: sales_fact primary + supplementary tables
+    lines = [_SALES_FACT_SCHEMA]
 
-    # Auto-discover join relationships from _id columns
-    joins = _discover_relationships(table_columns)
-    if joins:
-        lines.append("\nJOINS (use these when you need data from related tables):")
-        for join in joins:
-            lines.append(join)
+    # Supplementary tables: only those not covered by sales_fact
+    supplementary = {}
+    other = {}
+    for table_name, columns in tables.items():
+        if table_name in _SALES_FACT_TABLES:
+            continue  # covered by sales_fact
+        if table_name in _SUPPLEMENTARY_TABLES:
+            supplementary[table_name] = columns
+        else:
+            other[table_name] = columns
+
+    if supplementary:
+        lines.append("\nSUPPLEMENTARY TABLES — only when sales_fact doesn't have the data:")
+        for table_name, columns in supplementary.items():
+            lines.append(f"{table_name}({', '.join(columns)})")
+
+    if other:
+        lines.append("\nOTHER TABLES:")
+        for table_name, columns in other.items():
+            lines.append(f"{table_name}({', '.join(columns)})")
 
     _schema_context = "\n".join(lines)
     return _schema_context
@@ -139,8 +173,7 @@ def precrunch_metadata() -> str:
         names = [r[0] for r in rows]
         set_location_names(names)
         lines.append(f"Locations ({len(names)}): {', '.join(names)}")
-        lines.append("  -> Table: munu.revenue_units (customer_id, revenue_unit_id, name)")
-        lines.append("  -> Join from orders: o.customer_id = ru.customer_id AND o.revenue_unit_id = ru.revenue_unit_id")
+        lines.append("  -> Use: munuiq.sales_fact.location_name (no JOINs needed)")
         lines.append("  -> WARNING: Do NOT use munu.installations for location — orders.inid is always empty")
 
     # --- Date range ---
@@ -297,7 +330,7 @@ def build_product_catalog() -> str:
     # Compact format: just list the stems, not every variant
     _product_catalog = (
         f"PRODUCTS ({len(names)} articles, {len(all_stems)} searchable stems):\n"
-        f"Match with: ol.article_name ILIKE '%<stem>%'\n"
+        f"Match with: sf.product_name ILIKE '%<stem>%' (using munuiq.sales_fact sf)\n"
         f"Stems: {', '.join(sorted(set(all_stems)))}"
     )
     print(f"Built product catalog: {len(all_stems)} stems from {len(names)} articles")

@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MUNUIQ - Restaurant AI Analytics",
+  title: "AnalyticsIQ - Restaurant AI Analytics",
   description: "Multi-tenant restaurant analytics platform",
 };
 
