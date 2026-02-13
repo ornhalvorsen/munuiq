@@ -13,13 +13,6 @@ import {
   AskResponse,
 } from "@/lib/api/analytics";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Send,
   ThumbsUp,
   ThumbsDown,
@@ -34,11 +27,8 @@ import {
 } from "lucide-react";
 
 const MODELS = [
-  { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5", provider: "claude" },
-  { id: "claude-sonnet-4-5-20250929", label: "Sonnet 4.5", provider: "claude" },
-  { id: "claude-opus-4-6", label: "Opus 4.6", provider: "claude" },
-  { id: "ollama:sqlcoder", label: "SQLCoder", provider: "ollama" },
-  { id: "ollama:duckdb-nsql", label: "DuckDB-NSQL", provider: "ollama" },
+  { id: "claude-sonnet-4-5-20250929", label: "Sonnet 4.5" },
+  { id: "claude-opus-4-6", label: "Opus 4.6" },
 ] as const;
 
 interface ChatEntry {
@@ -200,6 +190,20 @@ export function ChatInterface() {
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center gap-1.5">
+        {MODELS.map((m) => (
+          <Button
+            key={m.id}
+            variant={model === m.id ? "default" : "outline"}
+            size="sm"
+            onClick={() => setModel(m.id)}
+            className="text-xs"
+          >
+            {m.label}
+          </Button>
+        ))}
+      </div>
+
       <form onSubmit={handleAsk} className="flex gap-2">
         <Input
           placeholder="Ask a question about the restaurant data..."
@@ -208,18 +212,6 @@ export function ChatInterface() {
           disabled={loading}
           className="flex-1"
         />
-        <Select value={model} onValueChange={setModel}>
-          <SelectTrigger className="w-[140px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {MODELS.map((m) => (
-              <SelectItem key={m.id} value={m.id}>
-                {m.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
         <Button type="submit" disabled={loading || !question.trim()}>
           {loading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
