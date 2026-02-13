@@ -9,6 +9,7 @@ from app.models import ALLOWED_MODELS
 from app.config import settings
 from app.database import connect, close
 from app.schema import discover_schema, get_table_count, build_product_catalog, precrunch_metadata
+from app.context import init_context
 from app.ollama_client import check_ollama_available, close_http_client
 from app import logging_db, management_db
 from app.routes import ask, dashboard, schema_route, feedback, interactions, auth_routes, admin_routes, onboarding_routes
@@ -27,6 +28,9 @@ async def lifespan(app: FastAPI):
 
     precrunch_metadata()
     build_product_catalog()
+
+    # Load CTXE context artifacts
+    init_context()
 
     # Generate SQL for common questions library against live schema
     print("Initializing common questions library...")

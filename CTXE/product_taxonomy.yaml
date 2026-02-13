@@ -1,0 +1,256 @@
+# ============================================================================
+# PRODUCT TAXONOMY — Smart model context for KS2
+# ============================================================================
+# Built from actual sales data (last 12 months, ~198M NOK revenue).
+#
+# Key finding: 20 products = 50% of revenue. 200 products = 94%.
+# The remaining 800+ products are long tail (<6% combined).
+#
+# Strategy: tier products by importance. The LLM gets detailed context for
+# high-value products, category-level context for mid-tier, and can ignore tail.
+# ============================================================================
+
+
+# --- THE NUMBERS -----------------------------------------------------------
+# 1,022 distinct products sold in last 12 months (of 2,575 in master data)
+# Revenue distribution:
+#   Top 20 products:   50% of revenue (  98M NOK)
+#   Top 50 products:   70% of revenue ( 138M NOK)
+#   Top 100 products:  84% of revenue ( 166M NOK)
+#   Top 200 products:  94% of revenue ( 186M NOK)
+#   Top 500 products:  99% of revenue ( 197M NOK)
+#   Tail 500+:          1% of revenue (   2M NOK)  ← 522 products, irrelevant
+
+
+# --- CATEGORY REVENUE RANKING ---------------------------------------------
+# Own production (bakery) + hot drinks = ~87% of revenue
+
+category_ranking:
+  # PRIORITY 1: Own production bakery — what KS bakes
+  - category: "Boller"
+    revenue_mnok: 57.8
+    pct: 29.1
+    products: 117
+    note: "Core product. Solskinnsbolle, Kanelsnurr, Pistasjknute dominate."
+    subcategories:
+      - {name: "Boller",          revenue_mnok: 39.2, products: 61, note: "Year-round pastries"}
+      - {name: "Smordeig",        revenue_mnok: 10.0, products: 19, note: "Puff pastry items (croissants etc)"}
+      - {name: "Scones",          revenue_mnok: 6.4,  products: 2,  note: "Musliscones almost all of it"}
+      - {name: "Boller (sesong)", revenue_mnok: 2.2,  products: 35, note: "Seasonal (jul, paske, fastelavn) — many SKUs, small volume each"}
+      - {name: "Saltbakst",       revenue_mnok: 0.1,  products: 2,  note: "Savory pastries — Stavanger only"}
+
+  - category: "Sandwich"
+    revenue_mnok: 40.6
+    pct: 20.5
+    products: 58
+    note: "Second biggest. Club sandwich is #2 product overall."
+    subcategories:
+      - {name: "Sandwich (basis)",     revenue_mnok: 28.9, products: 33, note: "Core sandwiches"}
+      - {name: "Salat",               revenue_mnok: 6.7,  products: 5,  note: "Caesarsalat etc"}
+      - {name: "Sandwich (sesong)",    revenue_mnok: 2.4,  products: 8}
+      - {name: "Toast",               revenue_mnok: 1.9,  products: 9}
+      - {name: "Sandwich (glutenfri)", revenue_mnok: 0.7,  products: 3}
+
+  - category: "Brod"
+    revenue_mnok: 25.6
+    pct: 12.9
+    products: 58
+    note: "Artisan bread. Fransk landbrod is the star."
+    subcategories:
+      - {name: "Brod",           revenue_mnok: 19.1, products: 33}
+      - {name: "Rundstykker",    revenue_mnok: 3.6,  products: 8,  note: "Rolls/buns"}
+      - {name: "Focaccia",       revenue_mnok: 2.9,  products: 17}
+
+  - category: "Kaker (porsjon)"
+    revenue_mnok: 9.8
+    pct: 4.9
+    products: 109
+    note: "Individual cake portions. Many SKUs, moderate volume each."
+    subcategories:
+      - {name: "Muffins/cupcakes", revenue_mnok: 4.1,  products: 36}
+      - {name: "Kjeks",            revenue_mnok: 1.9,  products: 11, note: "Cookies"}
+      - {name: "Brownie",          revenue_mnok: 1.3,  products: 8}
+      - {name: "Terter",           revenue_mnok: 1.2,  products: 8,  note: "Tarts"}
+      - {name: "Makroner",         revenue_mnok: 1.0,  products: 34, note: "Macarons — many flavors"}
+      - {name: "Porsjonskaker",    revenue_mnok: 0.3,  products: 6}
+      - {name: "Cakepops/minikaker", revenue_mnok: 0.1, products: 6}
+
+  - category: "Kaker (hele)"
+    revenue_mnok: 0.3
+    pct: 0.2
+    products: 12
+    note: "Whole cakes. Low POS volume (mostly ordered via Cakeiteasy web)."
+
+  # PRIORITY 2: Hot drinks — high margin, high frequency
+  - category: "Varm drikke"
+    revenue_mnok: 49.2
+    pct: 24.8
+    products: 160
+    note: "Second largest category. Coffee drives foot traffic."
+    subcategories:
+      - {name: "Kaffedrikker",      revenue_mnok: 33.0, products: 95, note: "Espresso drinks: latte, cappuccino, mocca"}
+      - {name: "Husets kaffe",       revenue_mnok: 11.5, products: 19, note: "Filter/drip coffee"}
+      - {name: "Annen varm drikke",  revenue_mnok: 3.4,  products: 14, note: "Tea, hot chocolate, chai"}
+      - {name: "Kaffe (tilbehor)",   revenue_mnok: 1.4,  products: 32, note: "Milk alternatives, syrups, extras"}
+
+  # PRIORITY 3: Supporting categories
+  - category: "Kald drikke"
+    revenue_mnok: 6.8
+    pct: 3.4
+    products: 115
+    note: "Cold beverages — not own production, but part of the offer."
+    subcategories:
+      - {name: "Brus",              revenue_mnok: 2.8, products: 21}
+      - {name: "Saft/juice",        revenue_mnok: 2.3, products: 38}
+      - {name: "Annen kald drikke", revenue_mnok: 1.0, products: 34}
+      - {name: "Vann",              revenue_mnok: 0.8, products: 22}
+
+  - category: "Delivarer (egenprodusert)"
+    revenue_mnok: 2.5
+    pct: 1.3
+    products: 67
+    note: "Own-production retail (jarred goods, coffee beans, etc)."
+
+  - category: "Delivarer (tredjepart)"
+    revenue_mnok: 1.0
+    pct: 0.5
+    products: 63
+    note: "Third-party retail. Low priority for analytics."
+
+  - category: "Diverse"
+    revenue_mnok: 2.4
+    pct: 1.2
+    products: 46
+    note: "Misc (bags, cutlery, extras). Tilbehor = add-ons at ~10 NOK avg."
+
+  - category: "Annen inntekt"
+    revenue_mnok: 1.0
+    pct: 0.5
+    products: 20
+    note: "Admin, packaging, non-product income."
+
+
+# --- PRODUCT TIERS FOR LLM CONTEXT ----------------------------------------
+# Determines how much detail the LLM gets about each product.
+
+tiers:
+  tier1_hero:
+    description: "Named in LLM context. The model knows these by name."
+    criteria: ">1M NOK revenue/year OR top 3 in any subcategory"
+    count: "~30 products"
+    coverage: "~65% of revenue"
+    products:
+      # Boller
+      - {name: "Solskinnsbolle",     category: "Boller",     both_regions: true, revenue_mnok: 17.3}
+      - {name: "Kanelsnurr",         category: "Boller",     both_regions: true, revenue_mnok: 10.1}
+      - {name: "Pistasjknute",       category: "Boller",     both_regions: true, revenue_mnok: 5.3}
+      - {name: "Musliscones",        category: "Boller",     both_regions: true, revenue_mnok: 6.4}
+      - {name: "Drommebolle",        category: "Boller",     stavanger: true,    revenue_mnok: 2.6}
+      - {name: "Skillingsbolle",     category: "Boller",     stavanger: true,    revenue_mnok: 2.0}
+      - {name: "Croissant",          category: "Boller",     both_regions: true, revenue_mnok: 2.5}
+      - {name: "Pain au chocolat",   category: "Boller",     both_regions: true, revenue_mnok: 1.5}
+      # Sandwich
+      - {name: "Club sandwich",      category: "Sandwich",   stavanger: true,    revenue_mnok: 11.8}
+      - {name: "Sandwich med ost og skinke", category: "Sandwich", stavanger: true, revenue_mnok: 4.7}
+      - {name: "BLT sandwich",       category: "Sandwich",   stavanger: true,    revenue_mnok: 3.0}
+      - {name: "Caesarsalat",        category: "Sandwich",   stavanger: true,    revenue_mnok: 2.9}
+      - {name: "Kyllingsandwich",    category: "Sandwich",   both_regions: true, revenue_mnok: 2.0}
+      # Brod
+      - {name: "Fransk landbrod",    category: "Brod",       both_regions: true, revenue_mnok: 4.5}
+      - {name: "Surdeigsbroed",      category: "Brod",       both_regions: true, revenue_mnok: 2.5}
+      - {name: "Loff",               category: "Brod",       both_regions: true, revenue_mnok: 1.5}
+      # Varm drikke
+      - {name: "Latte",              category: "Varm drikke", both_regions: true, revenue_mnok: 10.6}
+      - {name: "Husets kaffe",       category: "Varm drikke", both_regions: true, revenue_mnok: 10.0}
+      - {name: "Cappuccino",         category: "Varm drikke", both_regions: true, revenue_mnok: 9.0}
+      - {name: "Mocca",              category: "Varm drikke", both_regions: true, revenue_mnok: 4.0}
+      - {name: "Americano",          category: "Varm drikke", both_regions: true, revenue_mnok: 2.0}
+      - {name: "Varm sjokolade",     category: "Varm drikke", both_regions: true, revenue_mnok: 1.5}
+      - {name: "Cortado",            category: "Varm drikke", both_regions: true, revenue_mnok: 1.2}
+
+  tier2_known:
+    description: "Known by category + subcategory. LLM can query by group."
+    criteria: "10K-1M NOK revenue/year"
+    count: "~170 products"
+    coverage: "~30% of revenue"
+    context: "LLM gets subcategory-level stats, not individual product names."
+
+  tier3_tail:
+    description: "Ignored individually. LLM sees only category totals."
+    criteria: "<10K NOK revenue/year"
+    count: "~800+ products"
+    coverage: "<5% of revenue"
+    context: "Seasonal items, discontinued, test products, one-offs."
+    includes:
+      - "Seasonal variants (jul, paske, fastelavn, halloween, valentines)"
+      - "Location-specific specials"
+      - "Discontinued items still in master data"
+      - "Bundle SKUs (handled separately via bundle logic)"
+
+
+# --- TAXONOMY FOR LLM PROMPT ----------------------------------------------
+# This is what actually goes into the model's context.
+# Single compact block — replaces separate categories + top_products + aliases in lookups.yaml.
+# Target: ~150 tokens. One block, no redundancy.
+
+taxonomy_for_prompt: |
+  PRODUCT CATEGORIES (munu.articles_unified — always filter category_is_active=true):
+
+  Boller (58M, 29%): Pastries & buns. Subcats: Boller, Smordeig, Scones, Boller (sesong), Saltbakst.
+    Top: Solskinnsbolle (17M), Kanelsnurr (10M), Musliscones (6M), Pistasjknute (5M), Drommebolle (3M), Croissant (3M), Skillingsbolle (2M), Pain au chocolat (2M).
+  Sandwich (41M, 21%): Subcats: Sandwich (basis), Salat, Sandwich (sesong), Toast, Sandwich (glutenfri).
+    Top: Club sandwich (12M), Ost og skinke (5M), BLT (3M), Caesarsalat (3M), Kyllingsandwich (2M).
+  Varm drikke (49M, 25%): Coffee & hot beverages. Subcats: Kaffedrikker, Husets kaffe, Annen varm drikke, Kaffe (tilbehor).
+    Top: Latte (11M), Husets kaffe (10M), Cappuccino (9M), Mocca (4M), Americano (2M), Varm sjokolade (2M), Cortado (1M).
+  Brod (26M, 13%): Artisan bread. Subcats: Brod, Rundstykker, Focaccia.
+    Top: Fransk landbrod (5M), Surdeigsbroed (3M), Loff (2M).
+  Kaker porsjon (10M, 5%): Slices, cookies. Subcats: Muffins/cupcakes, Kjeks, Brownie, Terter, Makroner.
+  Kaker hele (<1%): Whole cakes — mostly via Cakeiteasy web orders.
+  Kald drikke (7M, 3%): Brus, Juice, Water.
+  Delivarer egenprodusert (3M, 1%): Own-production retail (jars, coffee beans).
+  Delivarer tredjepart (1M, <1%): Third-party retail.
+  Diverse (2M, 1%): Add-ons, bags, cutlery.
+  Annen inntekt (1M, <1%): Non-product income.
+
+  ~200 products cover 94% of revenue. 800+ tail products (<6%) are seasonal, discontinued, or one-offs.
+  Seasonal events: Jul, Paske, Fastelavn, Halloween, Valentines.
+
+# --- OLD NESTED FORMAT (kept for reference, do NOT inject this) -----------
+taxonomy_for_prompt_nested:
+  own_production:
+    Boller:
+      description: "Pastries & buns — #1 category (29% of revenue)"
+      hero_products: "Solskinnsbolle, Kanelsnurr, Pistasjknute, Musliscones, Drommebolle, Skillingsbolle, Croissant, Pain au chocolat"
+      subcategories: "Boller, Smordeig (puff pastry), Scones, Boller (sesong), Saltbakst"
+      seasonal_events: "Jul, Paske, Fastelavn, Halloween, Valentines"
+    Sandwich:
+      description: "Sandwiches & salads — #2 category (21%)"
+      hero_products: "Club sandwich, Ost og skinke, BLT, Caesarsalat, Kyllingsandwich"
+      subcategories: "Sandwich (basis), Salat, Sandwich (sesong), Toast, Sandwich (glutenfri)"
+    Brod:
+      description: "Artisan bread (13%)"
+      hero_products: "Fransk landbrod, Surdeigsbroed, Loff"
+      subcategories: "Brod, Rundstykker, Focaccia"
+    "Kaker (porsjon)":
+      description: "Cake slices, cookies, brownies (5%)"
+      subcategories: "Muffins/cupcakes, Kjeks, Brownie, Terter, Makroner, Porsjonskaker"
+    "Kaker (hele)":
+      description: "Whole cakes (<1% POS, most via web orders)"
+
+  hot_drinks:
+    "Varm drikke":
+      description: "Coffee & hot beverages — #2 by revenue (25%)"
+      hero_products: "Latte, Husets kaffe, Cappuccino, Mocca, Americano, Varm sjokolade, Cortado"
+      subcategories: "Kaffedrikker (espresso-based), Husets kaffe (filter), Annen varm drikke (tea/chocolate), Kaffe tilbehor (milk alts, syrups)"
+
+  supporting:
+    "Kald drikke":
+      description: "Cold beverages (3%) — Brus, Juice, Water"
+    "Delivarer (egenprodusert)":
+      description: "Own-production retail (1%) — Jarred goods, coffee beans"
+    "Delivarer (tredjepart)":
+      description: "Third-party retail (<1%)"
+    Diverse:
+      description: "Misc add-ons (1%) — Bags, cutlery, tilbehor"
+    "Annen inntekt":
+      description: "Non-product income (<1%)"

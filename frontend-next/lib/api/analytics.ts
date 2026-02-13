@@ -44,11 +44,16 @@ export interface DashboardResponse {
 
 export async function askQuestion(
   question: string,
-  model: string = "claude-sonnet-4-5-20250929"
+  model: string = "claude-sonnet-4-5-20250929",
+  insightModel?: string
 ): Promise<AskResponse> {
   return fetchJSON<AskResponse>("/ask", {
     method: "POST",
-    body: JSON.stringify({ question, model }),
+    body: JSON.stringify({
+      question,
+      model,
+      insight_model: insightModel ?? undefined,
+    }),
   });
 }
 

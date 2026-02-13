@@ -33,6 +33,10 @@ def ask(
     if model not in ALLOWED_MODELS:
         raise HTTPException(status_code=400, detail=f"Invalid model. Choose from: {sorted(ALLOWED_MODELS)}")
 
+    insight_model = request_body.insight_model or model
+    if insight_model not in ALLOWED_MODELS:
+        raise HTTPException(status_code=400, detail=f"Invalid insight_model. Choose from: {sorted(ALLOWED_MODELS)}")
+
     # Check Ollama availability for ollama models
     if model.startswith("ollama:"):
         ollama_ok = getattr(request.app.state, "ollama_available", False)
@@ -62,6 +66,7 @@ def ask(
             question=question,
             sql=common_sql,
             model=model,
+            insight_model=insight_model,
             provider=provider,
             sql_time_ms=0,
             cache_tier="common",
@@ -77,6 +82,7 @@ def ask(
             question=question,
             sql=cached_sql,
             model=model,
+            insight_model=insight_model,
             provider=provider,
             sql_time_ms=0,
             cache_tier="sql",
@@ -102,6 +108,7 @@ def ask(
         question=question,
         sql=sql,
         model=model,
+        insight_model=insight_model,
         provider=provider,
         sql_time_ms=sql_time_ms,
         cache_tier=None,
@@ -115,6 +122,7 @@ def _execute_with_sql(
     question: str,
     sql: str,
     model: str,
+    insight_model: str | None = None,
     provider: str,
     sql_time_ms: int,
     cache_tier: str | None,
@@ -170,7 +178,7 @@ def _execute_with_sql(
 
     t2 = time.perf_counter()
     try:
-        insight_data, insight_usage = generate_insight(question, sql, columns, data, model)
+        insight_data, insight_usage = generate_insight(question, sql, columns, data, insight_model or model)
         total_input += insight_usage.get("input_tokens", 0)
         total_output += insight_usage.get("output_tokens", 0)
     except Exception as e:

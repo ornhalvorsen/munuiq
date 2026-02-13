@@ -2,6 +2,7 @@ import json
 import anthropic
 from app.config import settings
 from app.schema import get_schema_context
+from app.context import assemble_context
 from app.question_parser import build_query_hints
 
 _client: anthropic.Anthropic | None = None
@@ -67,7 +68,7 @@ def _usage(response) -> dict:
 def generate_sql(question: str, model: str, customer_ids: list[int] | None = None) -> tuple[str, dict]:
     """Generate a SQL query from a natural language question. Returns (sql, usage)."""
     client = get_client()
-    schema_ctx = get_schema_context()
+    schema_ctx = assemble_context(question)
     hints = build_query_hints(question)
 
     # Build customer_id constraint for tenant-scoped queries
@@ -78,14 +79,13 @@ def generate_sql(question: str, model: str, customer_ids: list[int] | None = Non
 
     response = client.messages.create(
         model=model,
-        max_tokens=512,
+        max_tokens=1024,
         temperature=0,
         system=f"""SQL expert for DuckDB. Generate one SELECT query answering the question.
 
 {schema_ctx}
 
 Rules: ONLY the SQL, no explanation, no fences. SELECT only. LIMIT {settings.row_limit}. DuckDB syntax.
-When matching product/article names, use short root stems with ILIKE to catch all spelling variants.
 Always use table aliases and qualify every column with its alias to avoid ambiguous references.{customer_constraint}""",
         messages=[{"role": "user", "content": question + hints}],
     )
@@ -95,11 +95,11 @@ Always use table aliases and qualify every column with its alias to avoid ambigu
 def fix_sql(question: str, sql: str, error: str, model: str) -> tuple[str, dict]:
     """Fix a failed SQL query given the DuckDB error message. Returns (sql, usage)."""
     client = get_client()
-    schema_ctx = get_schema_context()
+    schema_ctx = assemble_context(question)
 
     response = client.messages.create(
         model=model,
-        max_tokens=512,
+        max_tokens=1024,
         temperature=0,
         system=f"""SQL expert for DuckDB. Fix the SQL query that failed.
 

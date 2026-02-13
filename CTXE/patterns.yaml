@@ -1,0 +1,486 @@
+# ============================================================================
+# PATTERN LIBRARY — Few-shot examples for complex queries
+# ============================================================================
+# Each pattern is a worked (question -> annotated SQL) example.
+# The context assembler picks 1-2 relevant patterns based on query intent
+# and injects them as few-shot examples alongside the schema/rules.
+#
+# All SQL validated against the live KS2 database (2026-02-13).
+# ============================================================================
+
+
+# ---------------------------------------------------------------------------
+# 1. CATEGORY TRENDS BY STORE OVER TIME
+# ---------------------------------------------------------------------------
+# Trigger: time series + category/product + by store/location
+# Keywords: "weekly", "monthly", "over time", "trend", "by store", "by location", "category sales"
+
+category_trends_by_store:
+  question: "Show me Boller sales by store, weekly, for the last 3 months"
+  domains: [sales, products, locations]
+  triggers:
+    - time series with location breakdown
+    - product/category performance across stores
+    - weekly or monthly trends by store
+  notes: |
+    - DATE_TRUNC for time bucketing (week/month/day)
+    - GROUP BY ALL is a DuckDB shorthand for all non-aggregated columns
+    - Bundle exclusion + category_is_active filter
+    - Output is a time x location matrix — good for line charts
+  sql: |
+    WITH weekly_sales AS (
+        SELECT DATE_TRUNC('week', o.order_date) AS week,
+               ru.name AS store,
+               au.category,
+               SUM(ol.net_amount) AS revenue,
+               SUM(ol.quantity) AS units
+        FROM munu.orders o
+        JOIN munu.order_lines ol ON o.customer_id = ol.customer_id AND o.soid = ol.soid
+        JOIN munu.revenue_units ru ON o.customer_id = ru.customer_id AND o.revenue_unit_id = ru.revenue_unit_id
+        JOIN munu.articles_unified au ON ol.customer_id = au.customer_id AND ol.article_id = au.article_id
+        WHERE o.order_date >= CURRENT_DATE - INTERVAL '3 months'
+          AND ol.net_amount IS NOT NULL
+          AND au.category_is_active = true
+          AND au.category = 'Boller'
+          AND NOT regexp_matches(ol.article_name, '\d+.*\bfor\s+\d+')
+        GROUP BY ALL
+    )
+    SELECT week, store, ROUND(revenue) AS revenue, ROUND(units) AS units
+    FROM weekly_sales
+    ORDER BY week, revenue DESC
+
+
+# ---------------------------------------------------------------------------
+# 2. STORE VS STORE COMPARISON (MULTI-DIMENSIONAL)
+# ---------------------------------------------------------------------------
+# Trigger: "compare X and Y", multiple metrics for specific stores
+# Keywords: "compare", "vs", "versus", "side by side", "avg ticket", "product mix"
+
+store_vs_store:
+  question: "Compare Madla and Kvadrat — revenue, avg ticket, units sold, product mix, top 5 products each"
+  domains: [sales, products, locations]
+  triggers:
+    - comparing two or more specific stores
+    - multiple metrics in one query
+    - per-store top-N products
+  notes: |
+    - Base CTE shared across all metrics to avoid scanning order_lines 3x
+    - avg ticket = total net_amount / COUNT(DISTINCT soid), not per line
+    - Product mix = % of revenue per category, using window function
+    - Per-store top-N uses QUALIFY ROW_NUMBER() OVER (PARTITION BY store ...)
+    - UNION ALL to combine different result shapes into one output
+  sql: |
+    WITH base AS (
+        SELECT ru.name AS store, o.soid, ol.article_name,
+               ol.net_amount, ol.quantity, au.category
+        FROM munu.orders o
+        JOIN munu.order_lines ol ON o.customer_id = ol.customer_id AND o.soid = ol.soid
+        JOIN munu.revenue_units ru ON o.customer_id = ru.customer_id AND o.revenue_unit_id = ru.revenue_unit_id
+        LEFT JOIN munu.articles_unified au ON ol.customer_id = au.customer_id AND ol.article_id = au.article_id
+        WHERE o.order_date >= CURRENT_DATE - INTERVAL '3 months'
+          AND ol.net_amount IS NOT NULL
+          AND o.revenue_unit_id IN ('362', '363')  -- Madla, Kvadrat
+          AND o.customer_id = 761
+    ),
+    metrics AS (
+        SELECT store,
+               COUNT(DISTINCT soid) AS orders,
+               ROUND(SUM(net_amount)) AS revenue,
+               ROUND(SUM(net_amount) / NULLIF(COUNT(DISTINCT soid), 0)) AS avg_ticket,
+               ROUND(SUM(quantity)) AS units
+        FROM base GROUP BY store
+    ),
+    product_mix AS (
+        SELECT store, category,
+               ROUND(SUM(net_amount)) AS cat_revenue,
+               ROUND(100.0 * SUM(net_amount) / SUM(SUM(net_amount)) OVER (PARTITION BY store), 1) AS pct
+        FROM base WHERE category IS NOT NULL
+        GROUP BY store, category
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY store ORDER BY SUM(net_amount) DESC) <= 5
+    ),
+    top_products AS (
+        SELECT store, article_name, ROUND(SUM(net_amount)) AS revenue
+        FROM base
+        WHERE NOT regexp_matches(article_name, '\d+.*\bfor\s+\d+')
+        GROUP BY store, article_name
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY store ORDER BY SUM(net_amount) DESC) <= 5
+    )
+    SELECT '1_metrics' AS section, store, orders || ' orders' AS detail, revenue || ' NOK' AS value, avg_ticket || ' avg ticket' AS extra FROM metrics
+    UNION ALL
+    SELECT '2_mix', store, category, cat_revenue || ' NOK', pct || '%' FROM product_mix
+    UNION ALL
+    SELECT '3_top5', store, article_name, revenue || ' NOK', NULL FROM top_products
+    ORDER BY section, store
+
+
+# ---------------------------------------------------------------------------
+# 3. YEAR-OVER-YEAR BY COMPLEX DIMENSIONS
+# ---------------------------------------------------------------------------
+# Trigger: "vs last year", "YoY", "growth", "compared to same period"
+# Keywords: "this year", "last year", "year over year", "growth", "compared to"
+
+yoy_category_by_store:
+  question: "Category revenue this year vs last year, by store, with growth %"
+  domains: [sales, products, locations]
+  triggers:
+    - year-over-year comparison
+    - growth percentage calculation
+    - multi-dimensional (store x category x time period)
+  notes: |
+    - Two CTEs: this_year and last_year, same day-range within each year
+    - FULL OUTER JOIN to catch categories/stores that exist in only one period
+    - COALESCE handles NULLs from the outer join
+    - last_year upper bound: CURRENT_DATE - INTERVAL '1 year' (same day last year)
+    - For same-store YoY: add WHERE store IN (SELECT store FROM this_year INTERSECT SELECT store FROM last_year)
+    - For YoY product mix shift: compute pct-of-store in each period, compare the percentages
+  sql: |
+    WITH this_year AS (
+        SELECT ru.name AS store, au.category,
+               ROUND(SUM(ol.net_amount)) AS revenue_ty
+        FROM munu.orders o
+        JOIN munu.order_lines ol ON o.customer_id = ol.customer_id AND o.soid = ol.soid
+        JOIN munu.revenue_units ru ON o.customer_id = ru.customer_id AND o.revenue_unit_id = ru.revenue_unit_id
+        JOIN munu.articles_unified au ON ol.customer_id = au.customer_id AND ol.article_id = au.article_id
+        WHERE o.order_date >= DATE_TRUNC('year', CURRENT_DATE)
+          AND ol.net_amount IS NOT NULL
+          AND au.category_is_active = true
+          AND NOT regexp_matches(ol.article_name, '\d+.*\bfor\s+\d+')
+        GROUP BY ru.name, au.category
+    ),
+    last_year AS (
+        SELECT ru.name AS store, au.category,
+               ROUND(SUM(ol.net_amount)) AS revenue_ly
+        FROM munu.orders o
+        JOIN munu.order_lines ol ON o.customer_id = ol.customer_id AND o.soid = ol.soid
+        JOIN munu.revenue_units ru ON o.customer_id = ru.customer_id AND o.revenue_unit_id = ru.revenue_unit_id
+        JOIN munu.articles_unified au ON ol.customer_id = au.customer_id AND ol.article_id = au.article_id
+        WHERE o.order_date >= DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 year'
+          AND o.order_date < CURRENT_DATE - INTERVAL '1 year'
+          AND ol.net_amount IS NOT NULL
+          AND au.category_is_active = true
+          AND NOT regexp_matches(ol.article_name, '\d+.*\bfor\s+\d+')
+        GROUP BY ru.name, au.category
+    )
+    SELECT COALESCE(ty.store, ly.store) AS store,
+           COALESCE(ty.category, ly.category) AS category,
+           COALESCE(ty.revenue_ty, 0) AS revenue_this_year,
+           COALESCE(ly.revenue_ly, 0) AS revenue_last_year,
+           CASE WHEN COALESCE(ly.revenue_ly, 0) > 0
+                THEN ROUND(100.0 * (COALESCE(ty.revenue_ty, 0) - ly.revenue_ly) / ly.revenue_ly, 1)
+                ELSE NULL END AS growth_pct
+    FROM this_year ty
+    FULL OUTER JOIN last_year ly ON ty.store = ly.store AND ty.category = ly.category
+    ORDER BY store, revenue_this_year DESC
+
+
+# ---------------------------------------------------------------------------
+# 4. LABOR HOURS VS SALES OVER TIME, BY LOCATION
+# ---------------------------------------------------------------------------
+# Trigger: "revenue per hour", "staffing", "labor", "efficiency by store"
+# Keywords: "per labor hour", "hours worked", "staffing", "efficiency", "overstaffed", "understaffed"
+
+revenue_per_labor_hour_monthly:
+  question: "Show me revenue per labor hour by store, monthly, for the last 6 months"
+  domains: [sales, labor, locations]
+  triggers:
+    - cross-schema (munu sales + planday labor)
+    - efficiency metrics (revenue/hour, sales/hour)
+    - labor vs revenue comparison
+  notes: |
+    - Cross-schema join via reference.department_mapping (bridges planday dept -> munu ruid)
+    - Sales CTE from munu.orders + order_lines + revenue_units
+    - Hours CTE from planday.punchclock_shifts (actual hours, not scheduled)
+    - Join on month + customer_id + revenue_unit_id
+    - Filter department_mapping.mapping_type = 'store' (exclude admin/production depts)
+    - Gotcha: some stores have no Planday mapping (munu_revenue_unit_id IS NULL) — filter those out
+  sql: |
+    WITH monthly_sales AS (
+        SELECT DATE_TRUNC('month', o.order_date) AS month,
+               ru.name AS store,
+               ru.customer_id, ru.revenue_unit_id,
+               ROUND(SUM(ol.net_amount)) AS revenue
+        FROM munu.orders o
+        JOIN munu.order_lines ol ON o.customer_id = ol.customer_id AND o.soid = ol.soid
+        JOIN munu.revenue_units ru ON o.customer_id = ru.customer_id AND o.revenue_unit_id = ru.revenue_unit_id
+        WHERE o.order_date >= CURRENT_DATE - INTERVAL '6 months'
+          AND ol.net_amount IS NOT NULL
+        GROUP BY ALL
+    ),
+    monthly_hours AS (
+        SELECT DATE_TRUNC('month', pc.date) AS month,
+               dm.display_name AS store,
+               dm.munu_customer_id, dm.munu_revenue_unit_id,
+               ROUND(SUM(pc.hours_worked), 1) AS hours
+        FROM planday.punchclock_shifts pc
+        JOIN reference.department_mapping dm
+          ON dm.planday_department_id = pc.department_id
+          AND dm.planday_portal_name = pc.portal_name
+        WHERE dm.mapping_type = 'store'
+          AND dm.munu_revenue_unit_id IS NOT NULL
+          AND pc.date >= CURRENT_DATE - INTERVAL '6 months'
+        GROUP BY ALL
+    )
+    SELECT s.month, s.store, s.revenue, h.hours,
+           ROUND(s.revenue / NULLIF(h.hours, 0)) AS revenue_per_hour
+    FROM monthly_sales s
+    LEFT JOIN monthly_hours h
+      ON s.month = h.month
+      AND s.customer_id = h.munu_customer_id
+      AND s.revenue_unit_id = h.munu_revenue_unit_id
+    WHERE h.hours IS NOT NULL AND h.hours > 0
+    ORDER BY s.month, revenue_per_hour DESC
+
+
+# ---------------------------------------------------------------------------
+# 5. BASKET-LEVEL ANALYSIS (ORDERS CONTAINING A PRODUCT)
+# ---------------------------------------------------------------------------
+# Trigger: "orders with X", "basket size", "average order when X is included"
+# Keywords: "orders containing", "orders with", "basket", "order size", "when they buy"
+
+basket_analysis_product:
+  question: "How many orders included a Solskinnsbolle? What's the average order size when it's included?"
+  domains: [sales, products]
+  triggers:
+    - order-level (not line-level) analysis
+    - basket metrics for a specific product
+    - "how many orders contain X"
+  notes: |
+    - First CTE: find distinct soid's containing the product (LIKE match for flexibility)
+    - Second CTE: join back to ALL order_lines for those orders (not just the product line)
+    - This gives full basket metrics: item count, total, median
+    - Common mistake: aggregating at line level instead of order level
+    - MEDIAN() is native in DuckDB
+  sql: |
+    WITH orders_with_product AS (
+        SELECT DISTINCT o.customer_id, o.soid
+        FROM munu.orders o
+        JOIN munu.order_lines ol ON o.customer_id = ol.customer_id AND o.soid = ol.soid
+        WHERE o.order_date >= CURRENT_DATE - INTERVAL '3 months'
+          AND LOWER(ol.article_name) LIKE '%solskinnsbolle%'
+    ),
+    basket_metrics AS (
+        SELECT owp.customer_id, owp.soid,
+               COUNT(*) AS items_in_order,
+               SUM(ol.net_amount) AS order_total
+        FROM orders_with_product owp
+        JOIN munu.order_lines ol ON owp.customer_id = ol.customer_id AND owp.soid = ol.soid
+        WHERE ol.net_amount IS NOT NULL
+        GROUP BY owp.customer_id, owp.soid
+    )
+    SELECT COUNT(*) AS orders_with_product,
+           ROUND(AVG(items_in_order), 1) AS avg_items_per_order,
+           ROUND(AVG(order_total)) AS avg_order_total,
+           ROUND(MEDIAN(order_total)) AS median_order_total
+    FROM basket_metrics
+
+
+# ---------------------------------------------------------------------------
+# 6. PRODUCTS SOLD TOGETHER (MARKET BASKET / CO-OCCURRENCE)
+# ---------------------------------------------------------------------------
+# Trigger: "sold together", "bought with", "common combination", "pair with"
+# Keywords: "together", "alongside", "combined with", "co-occurrence", "pair", "combo"
+
+products_sold_together:
+  question: "What products are most commonly bought together with Latte?"
+  domains: [sales, products]
+  triggers:
+    - co-occurrence / market basket analysis
+    - "what goes with X"
+    - product pairing
+  notes: |
+    - First CTE: find orders containing the anchor product
+    - Self-join back to order_lines to find companion products in same order
+    - Exclude the anchor product itself and bundle SKUs
+    - pct_of_orders = how often the companion appears in anchor-product orders
+    - For "top pairs overall" (no anchor): self-join where article_a < article_b to avoid duplicates
+    - Performance: limit date range, the self-join is expensive on large windows
+  sql: |
+    WITH latte_orders AS (
+        SELECT DISTINCT o.customer_id, o.soid
+        FROM munu.orders o
+        JOIN munu.order_lines ol ON o.customer_id = ol.customer_id AND o.soid = ol.soid
+        WHERE o.order_date >= CURRENT_DATE - INTERVAL '3 months'
+          AND LOWER(ol.article_name) = 'latte'
+    ),
+    companion_products AS (
+        SELECT ol.article_name,
+               COUNT(DISTINCT lo.soid) AS co_occurrence_count
+        FROM latte_orders lo
+        JOIN munu.order_lines ol ON lo.customer_id = ol.customer_id AND lo.soid = ol.soid
+        WHERE LOWER(ol.article_name) != 'latte'
+          AND ol.net_amount IS NOT NULL
+          AND NOT regexp_matches(ol.article_name, '\d+.*\bfor\s+\d+')
+        GROUP BY ol.article_name
+    )
+    SELECT article_name,
+           co_occurrence_count,
+           ROUND(100.0 * co_occurrence_count / (SELECT COUNT(*) FROM latte_orders), 1) AS pct_of_latte_orders
+    FROM companion_products
+    ORDER BY co_occurrence_count DESC
+    LIMIT 15
+
+
+# ---------------------------------------------------------------------------
+# 7. WASTE TRENDS BY LOCATION OVER TIME
+# ---------------------------------------------------------------------------
+# Trigger: "waste by store", "svinn", "waste trend", "waste cost"
+# Keywords: "waste", "svinn", "shrinkage", "discarded", "thrown away"
+
+waste_trends_by_location:
+  question: "Show me waste by store, weekly, for the last 3 months — in units and cost"
+  domains: [waste, locations]
+  triggers:
+    - waste analysis with location breakdown
+    - waste cost trends over time
+  notes: |
+    - IMPORTANT: revenue_units.inid is always NULL, so waste-to-location join goes
+      through terminals -> installations (using installation.name for display).
+    - Join path: article_waste -> terminals (terminal_id) -> installations (inid)
+    - Installation names differ from revenue_unit names (e.g., "Kanelsnurren Forus" vs "KS Forus")
+    - total_cost is pre-computed on the waste record (quantity * unit_cost)
+    - For waste-as-%-of-production: compare waste units to sold units in same period
+  sql: |
+    WITH weekly_waste AS (
+        SELECT DATE_TRUNC('week', aw.waste_date) AS week,
+               i.name AS store,
+               SUM(aw.quantity) AS waste_units,
+               ROUND(SUM(aw.total_cost)) AS waste_cost
+        FROM munu.article_waste aw
+        JOIN munu.terminals t ON aw.customer_id = t.customer_id AND aw.terminal_id = t.terminal_id
+        JOIN munu.installations i ON t.customer_id = i.customer_id AND t.inid = i.inid
+        WHERE aw.waste_date >= CURRENT_DATE - INTERVAL '3 months'
+        GROUP BY ALL
+    )
+    SELECT week, store, ROUND(waste_units) AS waste_units, waste_cost
+    FROM weekly_waste
+    ORDER BY week, waste_cost DESC
+
+
+# ---------------------------------------------------------------------------
+# 8. PEAK HOURS/DAYS BY STORE (WEEKDAY VS WEEKEND)
+# ---------------------------------------------------------------------------
+# Trigger: "busiest hours", "peak times", "hourly pattern", "weekday vs weekend"
+# Keywords: "busiest", "peak", "hourly", "by hour", "weekday", "weekend", "day of week"
+
+peak_hours_by_store:
+  question: "What are the busiest hours at Madla vs Kvadrat? Weekday vs weekend?"
+  domains: [sales, locations]
+  triggers:
+    - intraday / hourly analysis
+    - weekday vs weekend comparison
+    - peak time identification
+  notes: |
+    - EXTRACT(HOUR FROM order_datetime) for hour-of-day
+    - EXTRACT(DOW FROM order_date): 0=Sunday, 6=Saturday in DuckDB
+    - Filter hours 6-20 (stores aren't open outside this range)
+    - For "busiest hour" per store: add QUALIFY ROW_NUMBER() OVER (PARTITION BY store, day_type ORDER BY revenue DESC) = 1
+  sql: |
+    SELECT ru.name AS store,
+           EXTRACT(HOUR FROM o.order_datetime) AS hour,
+           CASE WHEN EXTRACT(DOW FROM o.order_date) IN (0, 6) THEN 'weekend' ELSE 'weekday' END AS day_type,
+           COUNT(DISTINCT o.soid) AS orders,
+           ROUND(SUM(ol.net_amount)) AS revenue
+    FROM munu.orders o
+    JOIN munu.order_lines ol ON o.customer_id = ol.customer_id AND o.soid = ol.soid
+    JOIN munu.revenue_units ru ON o.customer_id = ru.customer_id AND o.revenue_unit_id = ru.revenue_unit_id
+    WHERE o.order_date >= CURRENT_DATE - INTERVAL '4 weeks'
+      AND ol.net_amount IS NOT NULL
+      AND o.revenue_unit_id IN ('362', '363')  -- Madla, Kvadrat
+      AND o.customer_id = 761
+    GROUP BY ALL
+    HAVING hour BETWEEN 6 AND 20
+    ORDER BY store, day_type, hour
+
+
+# ---------------------------------------------------------------------------
+# 9. SEASONAL PRODUCT PERFORMANCE (YoY)
+# ---------------------------------------------------------------------------
+# Trigger: "seasonal", "jul", "christmas", "paske", "easter", "fastelavn"
+# Keywords: "seasonal", "jul", "christmas", "paske", "easter", "fastelavn", "sesong"
+
+seasonal_product_performance:
+  question: "How did our seasonal jul products perform vs last year?"
+  domains: [sales, products]
+  triggers:
+    - seasonal product comparison across years
+    - "which seasonal items should we bring back"
+  notes: |
+    - Seasonal products have different SKUs each year — compare by name or subcategory
+    - Subcategory filter: LIKE '%sesong%' catches Boller (sesong), Sandwich (sesong)
+    - Date windows for jul: Nov-Dec. For paske: Mar-Apr. For fastelavn: Feb.
+    - FULL OUTER JOIN on article_name to catch products in only one year
+    - Some products return year after year (Julebolle), others are one-offs
+  sql: |
+    WITH seasonal_this AS (
+        SELECT au.subcategory, ol.article_name,
+               ROUND(SUM(ol.net_amount)) AS revenue,
+               ROUND(SUM(ol.quantity)) AS units
+        FROM munu.orders o
+        JOIN munu.order_lines ol ON o.customer_id = ol.customer_id AND o.soid = ol.soid
+        JOIN munu.articles_unified au ON ol.customer_id = au.customer_id AND ol.article_id = au.article_id
+        WHERE o.order_date BETWEEN '2025-11-01' AND '2025-12-31'
+          AND ol.net_amount IS NOT NULL AND au.category_is_active = true
+          AND au.subcategory LIKE '%sesong%'
+          AND NOT regexp_matches(ol.article_name, '\d+.*\bfor\s+\d+')
+        GROUP BY au.subcategory, ol.article_name
+    ),
+    seasonal_last AS (
+        SELECT au.subcategory, ol.article_name,
+               ROUND(SUM(ol.net_amount)) AS revenue,
+               ROUND(SUM(ol.quantity)) AS units
+        FROM munu.orders o
+        JOIN munu.order_lines ol ON o.customer_id = ol.customer_id AND o.soid = ol.soid
+        JOIN munu.articles_unified au ON ol.customer_id = au.customer_id AND ol.article_id = au.article_id
+        WHERE o.order_date BETWEEN '2024-11-01' AND '2024-12-31'
+          AND ol.net_amount IS NOT NULL AND au.category_is_active = true
+          AND au.subcategory LIKE '%sesong%'
+          AND NOT regexp_matches(ol.article_name, '\d+.*\bfor\s+\d+')
+        GROUP BY au.subcategory, ol.article_name
+    )
+    SELECT COALESCE(t.subcategory, l.subcategory) AS subcategory,
+           COALESCE(t.article_name, l.article_name) AS product,
+           COALESCE(t.revenue, 0) AS revenue_2025,
+           COALESCE(l.revenue, 0) AS revenue_2024,
+           COALESCE(t.units, 0) AS units_2025,
+           COALESCE(l.units, 0) AS units_2024
+    FROM seasonal_this t
+    FULL OUTER JOIN seasonal_last l ON t.article_name = l.article_name
+    ORDER BY revenue_2025 + revenue_2024 DESC
+
+
+# ---------------------------------------------------------------------------
+# 10. CUMULATIVE / RUNNING TOTALS BY STORE
+# ---------------------------------------------------------------------------
+# Trigger: "cumulative", "running total", "YTD", "year to date"
+# Keywords: "cumulative", "running total", "YTD", "year to date", "accumulated"
+
+cumulative_revenue_by_store:
+  question: "Show cumulative revenue by store for Q1 2025"
+  domains: [sales, locations]
+  triggers:
+    - running total / cumulative sum
+    - YTD revenue tracking
+    - chart with accumulating line per store
+  notes: |
+    - SUM() OVER (PARTITION BY store ORDER BY date) for running total
+    - For continuous chart data with no gaps, use generate_series to fill missing dates
+    - DuckDB: generate_series(DATE '2025-01-01', DATE '2025-03-31', INTERVAL '1 day')
+    - CROSS JOIN stores with date series, LEFT JOIN daily revenue, COALESCE to 0
+  sql: |
+    WITH daily_rev AS (
+        SELECT o.order_date,
+               ru.name AS store,
+               ROUND(SUM(ol.net_amount)) AS revenue
+        FROM munu.orders o
+        JOIN munu.order_lines ol ON o.customer_id = ol.customer_id AND o.soid = ol.soid
+        JOIN munu.revenue_units ru ON o.customer_id = ru.customer_id AND o.revenue_unit_id = ru.revenue_unit_id
+        WHERE o.order_date >= '2025-01-01'
+          AND o.order_date < '2025-04-01'
+          AND ol.net_amount IS NOT NULL
+          AND o.customer_id = 761  -- Stavanger
+        GROUP BY o.order_date, ru.name
+    )
+    SELECT order_date, store, revenue,
+           SUM(revenue) OVER (PARTITION BY store ORDER BY order_date) AS cumulative_revenue
+    FROM daily_rev
+    ORDER BY store, order_date

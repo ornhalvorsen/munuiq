@@ -134,14 +134,14 @@ _LABOR_RE = re.compile(
 )
 
 _DATE_HINTS = {
-    "today": "sf.order_date = CURRENT_DATE",
-    "yesterday": "sf.order_date = CURRENT_DATE - INTERVAL '1 day'",
-    "this_week": "sf.order_date >= DATE_TRUNC('week', CURRENT_DATE)",
-    "last_week": "sf.order_date >= DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '7 days' AND sf.order_date < DATE_TRUNC('week', CURRENT_DATE)",
-    "this_month": "sf.order_date >= DATE_TRUNC('month', CURRENT_DATE)",
-    "last_month": "sf.order_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month' AND sf.order_date < DATE_TRUNC('month', CURRENT_DATE)",
-    "this_year": "sf.order_date >= DATE_TRUNC('year', CURRENT_DATE)",
-    "last_year": "sf.order_date >= DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 year' AND sf.order_date < DATE_TRUNC('year', CURRENT_DATE)",
+    "today": "o.order_date = CURRENT_DATE",
+    "yesterday": "o.order_date = CURRENT_DATE - INTERVAL '1 day'",
+    "this_week": "o.order_date >= DATE_TRUNC('week', CURRENT_DATE)",
+    "last_week": "o.order_date >= DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '7 days' AND o.order_date < DATE_TRUNC('week', CURRENT_DATE)",
+    "this_month": "o.order_date >= DATE_TRUNC('month', CURRENT_DATE)",
+    "last_month": "o.order_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month' AND o.order_date < DATE_TRUNC('month', CURRENT_DATE)",
+    "this_year": "o.order_date >= DATE_TRUNC('year', CURRENT_DATE)",
+    "last_year": "o.order_date >= DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 year' AND o.order_date < DATE_TRUNC('year', CURRENT_DATE)",
 }
 
 
@@ -158,29 +158,29 @@ def build_query_hints(question: str) -> str:
 
     has_location_match = bool(parsed["matched_locations"])
 
-    # Core sales/order/location/product/category data → sales_fact (no JOINs needed)
+    # Core sales/location data → munu.orders + order_lines + revenue_units
     if is_sales or is_revenue or is_location or has_location_match or parsed["matched_products"]:
         hints.append(
-            "Use: munuiq.sales_fact sf — has location_name, product_name, category, "
-            "net_amount, quantity, order_date (no JOINs needed)"
+            "Sales: munu.orders o JOIN munu.order_lines ol ON o.customer_id = ol.customer_id AND o.soid = ol.soid "
+            "JOIN munu.revenue_units ru ON o.customer_id = ru.customer_id AND o.revenue_unit_id = ru.revenue_unit_id"
         )
 
     # Specific location filter
     for loc in parsed["matched_locations"]:
-        hints.append(f"Location filter: sf.location_name = '{loc}'")
+        hints.append(f"Location filter: ru.name = '{loc}'")
         break  # Only use the first match to avoid conflicting filters
 
     # Product matching
     for stem in parsed["matched_products"]:
-        hints.append(f"Product filter: sf.product_name ILIKE '%{stem}%'")
+        hints.append(f"Product filter: ol.article_name ILIKE '%{stem}%'")
 
     # Revenue
     if is_revenue:
-        hints.append("Revenue: SUM(sf.net_amount) or sf.order_total")
+        hints.append("Revenue: SUM(ol.net_amount) WHERE ol.net_amount IS NOT NULL")
 
     # Quantity
     if is_sales and not is_revenue:
-        hints.append("Quantity: SUM(sf.quantity)")
+        hints.append("Quantity: SUM(ol.quantity)")
 
     # Date filter
     if parsed["time_period"] and parsed["time_period"] in _DATE_HINTS:
@@ -189,8 +189,8 @@ def build_query_hints(question: str) -> str:
     # Category
     if _CATEGORY_RE.search(question):
         hints.append(
-            "Categories: sf.category (unified) or sf.raw_category (original) "
-            "from munuiq.sales_fact sf"
+            "Categories: JOIN munu.articles_unified au ON ol.customer_id = au.customer_id "
+            "AND ol.article_id = au.article_id — use au.category (unified)"
         )
 
     # Payment
@@ -204,9 +204,14 @@ def build_query_hints(question: str) -> str:
     if is_waste:
         hints.append("Waste data: munu.article_waste — has article_name, quantity, total_cost, reason")
 
-    # Labor
+    # Labor — hint the cross-schema pattern
     if is_labor:
-        hints.append("Labor: munu.labor_shifts or planday.punchclock_shifts")
+        hints.append(
+            "Labor: planday.punchclock_shifts pc (actual hours). "
+            "Bridge to munu locations via reference.department_mapping dm "
+            "ON dm.planday_department_id = pc.department_id AND dm.planday_portal_name = pc.portal_name. "
+            "Filter dm.mapping_type = 'store' for retail-only."
+        )
 
     if not hints:
         return ""

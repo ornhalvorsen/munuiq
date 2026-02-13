@@ -1,0 +1,2015 @@
+# ============================================================================
+# SCHEMA METADATA — KS2 Restaurant Analytics
+# ============================================================================
+# This file is the single source of truth for what every table and column
+# means in business terms, how tables join, and what traps to avoid.
+# Designed to be read by humans AND parsed by code for LLM context assembly.
+#
+# Business: Kanelsnurren (KS) — Norwegian bakery chain
+#   - 30+ physical stores across Oslo & Stavanger
+#   - Brands: Kanelsnurren, Steam, Mjol, Kveitemjol
+#   - POS system: Munu MDS (Azure Blob)
+#   - Web orders: Cakeiteasy (REST API)
+#   - Workforce: Planday (REST API)
+#
+# Outlets:
+#   customer_id 10352 = KS Oslo (40+ stores)
+#   customer_id 761   = KS Stavanger
+#
+# Database: MotherDuck (DuckDB cloud), database "KS2-Service Agent Read"
+# ============================================================================
+
+
+# ============================================================================
+# DOMAIN: SALES
+# Core POS transaction data — orders, line items, payments
+# ============================================================================
+
+munu.orders:
+  domain: sales
+  description: >
+    POS sales order headers. One row per transaction. ~8M rows.
+    Always filter by date range to avoid scanning the full table.
+  row_count: 7_941_573
+  primary_key: [customer_id, soid]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier. 10352 = Oslo, 761 = Stavanger."
+      values: [10352, 761]
+    soid:
+      type: BIGINT
+      description: "Unique sales order ID. Monotonically increasing — used as high-water mark for incremental ETL."
+    order_number:
+      type: VARCHAR
+      description: "Human-readable order number displayed on receipt."
+    order_date:
+      type: DATE
+      description: "Business date of the order. Use this for daily aggregations."
+    order_time:
+      type: TIME
+      description: "Time of day the order was placed."
+    order_datetime:
+      type: TIMESTAMP
+      description: "Combined date+time. Use for hourly or intraday analysis."
+    inid:
+      type: VARCHAR
+      description: "Installation ID. ALWAYS EMPTY — do NOT use for joins. Use revenue_unit_id instead."
+      gotcha: "This field exists but is never populated. Joining on it returns zero rows."
+    terminal_id:
+      type: VARCHAR
+      description: "POS terminal where the order was placed. FK to munu.terminals."
+    revenue_unit_id:
+      type: VARCHAR
+      description: "Revenue reporting unit (store/brand). FK to munu.revenue_units. This is the correct field for location joins."
+    user_id:
+      type: VARCHAR
+      description: "POS user who registered the order. GUID format. FK to munu.users."
+    order_type_id:
+      type: VARCHAR
+      description: "Order type. FK to munu.order_types."
+    total_amount:
+      type: "DECIMAL(18,2)"
+      description: "Order total including VAT. For revenue reporting, prefer summing order_lines.net_amount instead."
+    total_vat:
+      type: "DECIMAL(18,2)"
+      description: "Total VAT on the order."
+    total_discount:
+      type: "DECIMAL(18,2)"
+      description: "Total discount applied to the order."
+    state:
+      type: VARCHAR
+      description: "Order state (e.g. completed, voided)."
+    _loaded_at:
+      type: TIMESTAMP
+      description: "ETL load timestamp. Internal metadata."
+    _source_blob:
+      type: VARCHAR
+      description: "Source Azure blob name. Internal metadata for traceability."
+  joins:
+    to_order_lines: "ol.customer_id = o.customer_id AND ol.soid = o.soid"
+    to_order_payments: "op.customer_id = o.customer_id AND op.soid = o.soid"
+    to_revenue_units: "ru.customer_id = o.customer_id AND ru.revenue_unit_id = o.revenue_unit_id"
+    to_terminals: "t.customer_id = o.customer_id AND t.terminal_id = o.terminal_id"
+    to_order_types: "ot.customer_id = o.customer_id AND ot.order_type_id = o.order_type_id"
+    to_users: "u.customer_id = o.customer_id AND u.user_id = o.user_id"
+  gotchas:
+    - "NEVER join on orders.inid — it is always empty."
+    - "Always include customer_id in joins (tables are scoped per outlet)."
+    - "~8M rows — always add a date filter."
+
+
+munu.order_lines:
+  domain: sales
+  description: >
+    Line items for each POS order. ~16M rows. One row per product per order.
+    CRITICAL: Multi-item bundles create DUAL line items — see bundle handling below.
+  row_count: 15_916_834
+  primary_key: [customer_id, soid, line_number]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier. 10352 = Oslo, 761 = Stavanger."
+    soid:
+      type: BIGINT
+      description: "Parent order ID. FK to munu.orders."
+    line_number:
+      type: INTEGER
+      description: "Line sequence number within the order."
+    article_id:
+      type: VARCHAR
+      description: "Product identifier. FK to munu.articles / munu.articles_unified. String even when numeric-looking."
+    article_name:
+      type: VARCHAR
+      description: "Product name at time of sale. May differ from current master data name."
+    quantity:
+      type: "DECIMAL(18,4)"
+      description: "Quantity sold. Always positive for sales."
+    net_amount:
+      type: "DECIMAL(18,2)"
+      description: >
+        Revenue excluding VAT. Use this for all revenue calculations.
+        CAN BE NULL — NULL means this is a bundle component (see bundle handling).
+    gross_amount:
+      type: "DECIMAL(18,2)"
+      description: "Revenue including VAT. Avoid for reporting — use net_amount."
+    discount_amount:
+      type: "DECIMAL(18,2)"
+      description: "Discount applied to this line."
+    vat_amount:
+      type: "DECIMAL(18,2)"
+      description: "VAT amount on this line."
+    tax_pct_value:
+      type: "DECIMAL(5,2)"
+      description: "VAT rate percentage (e.g. 15.00, 25.00)."
+    _loaded_at:
+      type: TIMESTAMP
+      description: "ETL load timestamp."
+  joins:
+    to_orders: "o.customer_id = ol.customer_id AND o.soid = ol.soid"
+    to_articles_unified: "au.customer_id = ol.customer_id AND au.article_id = ol.article_id"
+    to_articles: "a.customer_id = ol.customer_id AND a.article_id = ol.article_id"
+  bundle_handling:
+    explanation: >
+      Multi-item bundles (e.g. "4 boller for 149") create TWO types of line items:
+        1. Bundle SKU — has a price in net_amount (e.g. 129.57 NOK)
+        2. Component items — have NULL in net_amount (e.g. 2x Kanelsnurr, 2x Pistasjknute)
+      This means the same physical products appear TWICE: once as a priced bundle and
+      once as NULL-priced components. Failing to handle this causes 13%+ errors.
+    bundle_regex: '\d+.*\bfor\s+\d+'
+    for_revenue: >
+      WHERE ol.net_amount IS NOT NULL
+      — Counts bundle SKU price + individual item prices. Excludes NULL components.
+    for_production: >
+      WHERE NOT regexp_matches(ol.article_name, '\d+.*\bfor\s+\d+')
+      — Counts actual products (components + individual). Excludes bundle SKUs.
+    for_item_mix: >
+      WHERE NOT regexp_matches(ol.article_name, '\d+.*\bfor\s+\d+')
+      — Same as production: counts real products, not pricing artifacts.
+    example: |
+      Order soid=189488132:
+        Line 1: Kanelsnurr     qty=2  net_amount=NULL     <- component
+        Line 2: Pistasjknute   qty=2  net_amount=NULL     <- component
+        Line 3: 4 boller for 149  qty=1  net_amount=129.57  <- bundle SKU
+
+
+munu.order_payments:
+  domain: sales
+  description: >
+    Payment records for POS orders. ~8M rows. One row per payment method per order.
+    An order can have multiple payments (e.g. split between card and cash).
+  row_count: 7_974_385
+  primary_key: [customer_id, soid, payment_number]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    soid:
+      type: BIGINT
+      description: "Parent order ID. FK to munu.orders."
+    payment_number:
+      type: INTEGER
+      description: "Payment sequence number within the order."
+    ptid:
+      type: VARCHAR
+      description: "Payment type ID. FK to munu.payment_types."
+    payment_type_name:
+      type: VARCHAR
+      description: "Payment method name at time of sale (e.g. Vipps, Kort, Kontant)."
+    amount:
+      type: "DECIMAL(18,2)"
+      description: "Payment amount."
+    _loaded_at:
+      type: TIMESTAMP
+      description: "ETL load timestamp."
+  joins:
+    to_orders: "o.customer_id = op.customer_id AND o.soid = op.soid"
+    to_payment_types: "pt.customer_id = op.customer_id AND pt.ptid = op.ptid"
+
+
+munu.order_types:
+  domain: sales
+  description: "Order type definitions (e.g. dine-in, takeaway). 48 rows."
+  row_count: 48
+  primary_key: [customer_id, order_type_id]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    order_type_id:
+      type: VARCHAR
+      description: "Order type ID."
+    name:
+      type: VARCHAR
+      description: "Order type name."
+    _loaded_at:
+      type: TIMESTAMP
+      description: "ETL load timestamp."
+  joins:
+    to_order_type_groups: "otg.customer_id = ot.customer_id AND otg.otgid = ot.order_type_group_id"
+
+
+munu.order_type_groups:
+  domain: sales
+  description: "High-level grouping of order types. 4 rows."
+  row_count: 4
+  primary_key: [customer_id, otgid]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    otgid:
+      type: VARCHAR
+      description: "Order type group ID."
+    name:
+      type: VARCHAR
+      description: "Group name."
+      values: ["Kiosk", "POS", "Pos", "Standard"]
+    status:
+      type: VARCHAR
+      description: "Active/inactive status."
+    _loaded_at:
+      type: TIMESTAMP
+      description: "ETL load timestamp."
+
+
+munu.payment_types:
+  domain: sales
+  description: "Payment method definitions (e.g. card, cash, Vipps). 78 rows."
+  row_count: 78
+  primary_key: [customer_id, ptid]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    ptid:
+      type: VARCHAR
+      description: "Payment type ID."
+    name:
+      type: VARCHAR
+      description: "Payment method name."
+    payment_type_code:
+      type: VARCHAR
+      description: "Payment type code (rarely populated)."
+    _loaded_at:
+      type: TIMESTAMP
+      description: "ETL load timestamp."
+
+
+munu.terminals:
+  domain: sales
+  description: "Physical POS terminal devices. 66 rows. Used to link waste data to locations."
+  row_count: 66
+  primary_key: [customer_id, terminal_id]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    terminal_id:
+      type: VARCHAR
+      description: "Terminal ID. String, even when numeric-looking."
+    inid:
+      type: VARCHAR
+      description: "Parent installation ID. FK to munu.installations. Used for waste-to-location joins."
+    name:
+      type: VARCHAR
+      description: "Terminal name."
+    serial_number:
+      type: VARCHAR
+      description: "Device serial number."
+    _loaded_at:
+      type: TIMESTAMP
+      description: "ETL load timestamp."
+  joins:
+    to_installations: "i.customer_id = t.customer_id AND i.inid = t.inid"
+    to_revenue_units: "ru.customer_id = t.customer_id AND ru.inid = t.inid"
+  gotchas:
+    - "Terminals link to locations via installations (inid), not directly to revenue_units."
+    - "This is the only reliable path for waste -> location joins."
+
+
+# ============================================================================
+# DOMAIN: PRODUCTS
+# Menu items, categories, pricing, and product metadata
+# ============================================================================
+
+munu.articles_unified:
+  domain: products
+  description: >
+    ALWAYS use this instead of munu.articles. Denormalized view with unified
+    category names across Oslo and Stavanger. 2,575 rows.
+  row_count: 2575
+  primary_key: [customer_id, article_id]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier. 10352 = Oslo, 761 = Stavanger."
+    outlet:
+      type: VARCHAR
+      description: "Human-readable outlet name."
+      values: ["Oslo", "Stavanger"]
+    article_id:
+      type: VARCHAR
+      description: "Product identifier. String even when numeric."
+    article_number:
+      type: VARCHAR
+      description: "Display article number. Some overlap with cakeiteasy product_number (~3%)."
+    name:
+      type: VARCHAR
+      description: "Product name."
+    raw_group:
+      type: VARCHAR
+      description: "Original POS category name. Differs between outlets — do NOT use for cross-outlet analytics."
+    raw_subgroup:
+      type: VARCHAR
+      description: "Original POS subcategory name."
+    category:
+      type: VARCHAR
+      description: >
+        Unified category name. Use this for all analytics.
+      values:
+        - "Boller"                       # Pastries/buns — core bakery
+        - "Brod"                         # Artisan breads
+        - "Kaker (hele)"                 # Whole cakes
+        - "Kaker (porsjon)"             # Cake slices, brownies, muffins
+        - "Sandwich"                     # Sandwiches, salads, toast
+        - "Varm drikke"                  # Hot beverages (coffee, tea)
+        - "Kald drikke"                  # Cold beverages (soda, juice, water)
+        - "Delivarer (egenprodusert)"    # Retail: own production
+        - "Delivarer (tredjepart)"       # Retail: third-party products
+        - "Diverse"                      # Miscellaneous
+        - "Annen inntekt"               # Other income (admin, packaging)
+    subcategory:
+      type: VARCHAR
+      description: "Unified subcategory name for finer product breakdown."
+    category_is_active:
+      type: BOOLEAN
+      description: >
+        false = legacy/inactive/test items. ALWAYS filter with
+        WHERE category_is_active = true for active analytics.
+    category_notes:
+      type: VARCHAR
+      description: "Internal notes about the category mapping."
+    price:
+      type: "DECIMAL(18,2)"
+      description: "Current selling price from master data."
+    cost_price:
+      type: "DECIMAL(18,2)"
+      description: "Cost price from master data."
+    tax_pct_value:
+      type: "DECIMAL(5,2)"
+      description: "VAT rate %."
+    active:
+      type: BOOLEAN
+      description: "Whether the article is active in POS."
+    _loaded_at:
+      type: TIMESTAMP
+      description: "ETL load timestamp."
+  joins:
+    to_order_lines: "ol.customer_id = au.customer_id AND ol.article_id = au.article_id"
+    to_article_waste: "aw.customer_id = au.customer_id AND aw.article_id = au.article_id"
+    to_product_costs: "pc.customer_id = au.customer_id AND pc.article_id = au.article_id"
+    to_product_lifecycle: "pl.customer_id = au.customer_id AND pl.article_id = au.article_id"
+  gotchas:
+    - "ALWAYS filter category_is_active = true to exclude 354 legacy/test items."
+    - "Use category (unified) not raw_group for cross-outlet comparisons."
+    - "Oslo 'Sandwich' = Stavanger 'Sandwich og salater' -> unified as 'Sandwich'."
+
+
+munu.articles:
+  domain: products
+  description: >
+    Raw product master data from POS. 2,575 rows. Prefer munu.articles_unified
+    which has unified categories. Use this only if you need raw POS fields.
+  row_count: 2575
+  primary_key: [customer_id, article_id]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    article_id:
+      type: VARCHAR
+      description: "Product identifier."
+    article_number:
+      type: VARCHAR
+      description: "Display article number."
+    name:
+      type: VARCHAR
+      description: "Product name."
+    description:
+      type: VARCHAR
+      description: "Product description."
+    article_group_id:
+      type: VARCHAR
+      description: "Raw POS category ID."
+    article_group_name:
+      type: VARCHAR
+      description: "Raw POS category name (differs between outlets)."
+    article_subgroup_id:
+      type: VARCHAR
+      description: "Raw POS subcategory ID."
+    article_subgroup_name:
+      type: VARCHAR
+      description: "Raw POS subcategory name."
+    unit:
+      type: VARCHAR
+      description: "Unit of measure."
+    price:
+      type: "DECIMAL(18,2)"
+      description: "Selling price."
+    tax_pct_value:
+      type: "DECIMAL(5,2)"
+      description: "VAT rate %."
+    cost_price:
+      type: "DECIMAL(18,2)"
+      description: "Cost price."
+    active:
+      type: BOOLEAN
+      description: "Whether the article is active."
+    _loaded_at:
+      type: TIMESTAMP
+      description: "ETL load timestamp."
+  gotchas:
+    - "Prefer articles_unified — it has unified categories across outlets."
+
+
+munu.article_category_map:
+  domain: products
+  description: >
+    Mapping table that translates raw POS category names to unified categories.
+    75 rows. Maintained manually via create_category_map.py.
+  row_count: 75
+  primary_key: [raw_group, raw_subgroup]
+  columns:
+    raw_group:
+      type: VARCHAR
+      description: "Original POS group name."
+    raw_subgroup:
+      type: VARCHAR
+      description: "Original POS subgroup name."
+    unified_group:
+      type: VARCHAR
+      description: "Unified category name."
+    unified_subgroup:
+      type: VARCHAR
+      description: "Unified subcategory name."
+    is_active:
+      type: BOOLEAN
+      description: "Whether this category is active. false = legacy/test."
+    notes:
+      type: VARCHAR
+      description: "Mapping notes (e.g. 'Oslo only', 'Stavanger legacy')."
+
+
+admin.product_costs:
+  domain: products
+  description: >
+    Admin-maintained product cost prices. 1,920 rows.
+    Supplements/overrides cost_price from munu.articles.
+  row_count: 1920
+  primary_key: [customer_id, article_id]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    article_id:
+      type: VARCHAR
+      description: "Product identifier. FK to munu.articles."
+    cost_price:
+      type: "DECIMAL(18,2)"
+      description: "Admin-set cost price."
+    munu_cost_price:
+      type: "DECIMAL(18,2)"
+      description: "Original cost price from Munu POS for reference."
+    source:
+      type: VARCHAR
+      description: "Where the cost price came from."
+      values: ["estimated"]
+    updated_at:
+      type: TIMESTAMP
+      description: "When the cost was last updated."
+
+
+admin.product_lifecycle:
+  domain: products
+  description: >
+    Product lifecycle classification: year-round, seasonal, or discontinued. 521 rows.
+    Used for forecasting and menu planning.
+  row_count: 521
+  primary_key: [customer_id, article_id]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    article_id:
+      type: VARCHAR
+      description: "Product identifier."
+    name:
+      type: VARCHAR
+      description: "Product name."
+    category:
+      type: VARCHAR
+      description: "Product category (Boller, Brod, Kaker, Sandwich)."
+    status:
+      type: VARCHAR
+      description: "Lifecycle status."
+      values: ["year_round", "seasonal", "discontinued"]
+    season_start_month:
+      type: INTEGER
+      description: "Month when seasonal product becomes available (1-12)."
+    season_end_month:
+      type: INTEGER
+      description: "Month when seasonal product is removed (1-12)."
+    season_event:
+      type: VARCHAR
+      description: "Associated event for seasonal products."
+      values: ["fastelavn", "halloween", "jul", "paske", "valentines"]
+    last_sold_date:
+      type: DATE
+      description: "Last date this product was sold."
+    months_active:
+      type: INTEGER
+      description: "Number of months with sales."
+    total_months:
+      type: INTEGER
+      description: "Total months in observation window."
+    total_qty:
+      type: FLOAT
+      description: "Total quantity sold in observation window."
+    n_locations:
+      type: INTEGER
+      description: "Number of locations that sold this product."
+    classified_at:
+      type: TIMESTAMP
+      description: "When the classification was computed."
+    manual_override:
+      type: BOOLEAN
+      description: "Whether an admin manually overrode the classification."
+
+
+# ============================================================================
+# DOMAIN: LOCATIONS
+# Physical stores, organizational hierarchy, and mapping
+# ============================================================================
+
+munu.revenue_units:
+  domain: locations
+  description: >
+    Revenue reporting units — each represents a store or brand within an outlet.
+    35 rows. THIS IS THE PRIMARY LOCATION TABLE. Use for all location joins.
+  row_count: 35
+  primary_key: [customer_id, revenue_unit_id]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier. 10352 = Oslo, 761 = Stavanger."
+    revenue_unit_id:
+      type: VARCHAR
+      description: "Revenue unit ID. String even when numeric."
+    inid:
+      type: VARCHAR
+      description: "Parent installation ID. FK to munu.installations."
+    name:
+      type: VARCHAR
+      description: "Store/brand name (e.g. 'Kanelsnurren Majorstuen', 'Steam Torggata')."
+    _loaded_at:
+      type: TIMESTAMP
+      description: "ETL load timestamp."
+  joins:
+    from_orders: "o.customer_id = ru.customer_id AND o.revenue_unit_id = ru.revenue_unit_id"
+    from_terminals: "t.customer_id = ru.customer_id AND t.inid = ru.inid"
+    to_installations: "i.customer_id = ru.customer_id AND i.inid = ru.inid"
+    from_department_mapping: "dm.munu_customer_id = ru.customer_id AND dm.munu_revenue_unit_id = ru.revenue_unit_id"
+  gotchas:
+    - "This is the correct location table. Do NOT use munu.installations for location analytics."
+    - "Some locations can be excluded via admin.settings (key='excluded_locations')."
+    - "35 rows across both outlets — small enough to include all names in context."
+
+
+munu.business_units:
+  domain: locations
+  description: >
+    Legal/organizational entities. 25 rows. Each business unit can contain
+    multiple installations and revenue units.
+  row_count: 25
+  primary_key: [customer_id, buid]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    buid:
+      type: VARCHAR
+      description: "Business unit ID."
+    name:
+      type: VARCHAR
+      description: "Business unit name (e.g. 'Kanelsnurren Eiganes', 'Brod Bakerne AS (Steam)')."
+    org_nr:
+      type: VARCHAR
+      description: "Norwegian organization number."
+    street:
+      type: VARCHAR
+      description: "Street address."
+    zip:
+      type: VARCHAR
+      description: "Postal code."
+    city:
+      type: VARCHAR
+      description: "City."
+    country:
+      type: VARCHAR
+      description: "Country."
+    _loaded_at:
+      type: TIMESTAMP
+      description: "ETL load timestamp."
+
+
+munu.customers:
+  domain: locations
+  description: >
+    Top-level customer/outlet records. Only 2 rows (Oslo and Stavanger).
+    Contains company info for each outlet.
+  row_count: 2
+  primary_key: [customer_id]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier. 10352 = Oslo, 761 = Stavanger."
+    coid:
+      type: VARCHAR
+      description: "Munu internal customer ID."
+    name:
+      type: VARCHAR
+      description: "Company name."
+    street:
+      type: VARCHAR
+      description: "Street address."
+    zip:
+      type: VARCHAR
+      description: "Postal code."
+    city:
+      type: VARCHAR
+      description: "City."
+    country:
+      type: VARCHAR
+      description: "Country."
+    currency:
+      type: VARCHAR
+      description: "Currency code (NOK)."
+    phone:
+      type: VARCHAR
+      description: "Phone number."
+    email:
+      type: VARCHAR
+      description: "Email address."
+    org_nr:
+      type: VARCHAR
+      description: "Norwegian organization number."
+    _loaded_at:
+      type: TIMESTAMP
+      description: "ETL load timestamp."
+
+
+munu.installations:
+  domain: locations
+  description: >
+    Physical store installations. 39 rows. Links terminals to revenue units.
+    Do NOT use directly for location analytics — use revenue_units instead.
+  row_count: 39
+  primary_key: [customer_id, inid]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    inid:
+      type: VARCHAR
+      description: "Installation ID."
+    buid:
+      type: VARCHAR
+      description: "Parent business unit ID."
+    name:
+      type: VARCHAR
+      description: "Installation name."
+    street:
+      type: VARCHAR
+      description: "Street address."
+    zip:
+      type: VARCHAR
+      description: "Postal code."
+    city:
+      type: VARCHAR
+      description: "City."
+    phone:
+      type: VARCHAR
+      description: "Phone."
+    _loaded_at:
+      type: TIMESTAMP
+      description: "ETL load timestamp."
+  gotchas:
+    - "Do NOT use for location analytics. Use munu.revenue_units instead."
+    - "Installations are an intermediate entity: terminal -> installation -> revenue_unit."
+
+
+munu.customer_clients:
+  domain: locations
+  description: "B2B clients per outlet. 4,865 rows. Rarely used in analytics."
+  row_count: 4865
+  primary_key: [customer_id, ccid]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    ccid:
+      type: VARCHAR
+      description: "Client ID (GUID)."
+    name:
+      type: VARCHAR
+      description: "Client name."
+    client_type:
+      type: VARCHAR
+      description: "Client type."
+    _loaded_at:
+      type: TIMESTAMP
+      description: "ETL load timestamp."
+
+
+munu.accounts:
+  domain: locations
+  description: "Accounting accounts from POS system. 43 rows. Rarely queried directly."
+  row_count: 43
+  primary_key: [customer_id, acid]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    acid:
+      type: VARCHAR
+      description: "Account ID."
+    account_number:
+      type: VARCHAR
+      description: "Account number."
+    name:
+      type: VARCHAR
+      description: "Account name."
+    account_type:
+      type: VARCHAR
+      description: "Account type."
+    _loaded_at:
+      type: TIMESTAMP
+      description: "ETL load timestamp."
+
+
+munu.users:
+  domain: locations
+  description: "POS system users (cashiers, managers). 808 rows."
+  row_count: 808
+  primary_key: [customer_id, user_id]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    user_id:
+      type: VARCHAR
+      description: "User ID (GUID format)."
+    username:
+      type: VARCHAR
+      description: "Username."
+    first_name:
+      type: VARCHAR
+      description: "First name."
+    last_name:
+      type: VARCHAR
+      description: "Last name."
+    public_name:
+      type: VARCHAR
+      description: "Display name."
+    _loaded_at:
+      type: TIMESTAMP
+      description: "ETL load timestamp."
+
+
+reference.department_mapping:
+  domain: locations
+  description: >
+    Bridge table linking Planday departments to Munu revenue units.
+    CRITICAL for cross-schema labor-to-location analytics. 41 rows.
+  row_count: 41
+  primary_key: [planday_portal_name, planday_department_id]
+  columns:
+    planday_portal_name:
+      type: VARCHAR
+      description: "Planday portal. 'oslo' or 'stavanger'."
+      values: ["oslo", "stavanger"]
+    planday_department_id:
+      type: BIGINT
+      description: "FK to planday.departments.id."
+    planday_department_name:
+      type: VARCHAR
+      description: "Department name in Planday."
+    munu_customer_id:
+      type: INTEGER
+      description: "Munu outlet ID. 10352 = Oslo, 761 = Stavanger."
+    munu_inid:
+      type: VARCHAR
+      description: "Munu installation ID."
+    munu_installation_name:
+      type: VARCHAR
+      description: "Munu installation name."
+    mapping_type:
+      type: VARCHAR
+      description: "What kind of department this is."
+      values: ["store", "production", "admin", "support", "inactive"]
+    notes:
+      type: VARCHAR
+      description: "Human notes about the mapping."
+    munu_revenue_unit_id:
+      type: VARCHAR
+      description: "FK to munu.revenue_units.revenue_unit_id."
+    display_name:
+      type: VARCHAR
+      description: "Clean display name for reporting."
+    merged_into:
+      type: VARCHAR
+      description: "If this department merged into another, the target department ID."
+  joins:
+    to_planday_departments: "d.id = dm.planday_department_id AND d.portal_name = dm.planday_portal_name"
+    to_revenue_units: "ru.customer_id = dm.munu_customer_id AND ru.revenue_unit_id = dm.munu_revenue_unit_id"
+  gotchas:
+    - "Not all Planday departments map to a Munu location (admin, production, inactive)."
+    - "Filter mapping_type = 'store' for retail-only analysis."
+    - "Some departments merged — check merged_into for historical data continuity."
+
+
+# ============================================================================
+# DOMAIN: WASTE
+# Food waste / shrinkage tracking
+# ============================================================================
+
+munu.article_waste:
+  domain: waste
+  description: >
+    Waste/shrinkage records. ~760K rows. Each row is one waste registration
+    for a specific article at a specific terminal.
+  row_count: 760_286
+  primary_key: [customer_id, waste_id]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier. 10352 = Oslo, 761 = Stavanger."
+    waste_id:
+      type: VARCHAR
+      description: "Unique waste record ID."
+    waste_date:
+      type: DATE
+      description: "Date waste was registered."
+    waste_datetime:
+      type: TIMESTAMP
+      description: "Exact timestamp of waste registration."
+    terminal_id:
+      type: VARCHAR
+      description: >
+        Terminal where waste was registered. FK to munu.terminals.
+        This is the path to location: waste -> terminal -> installation -> revenue_unit.
+    inid:
+      type: VARCHAR
+      description: "Installation ID. May be null — use terminal_id for location joins instead."
+    article_id:
+      type: VARCHAR
+      description: "Product identifier. FK to munu.articles / articles_unified."
+    article_name:
+      type: VARCHAR
+      description: "Product name at time of waste registration."
+    quantity:
+      type: "DECIMAL(18,4)"
+      description: "Quantity wasted."
+    unit_cost:
+      type: "DECIMAL(18,2)"
+      description: "Cost per unit."
+    total_cost:
+      type: "DECIMAL(18,2)"
+      description: "Total waste cost (quantity * unit_cost)."
+    reason:
+      type: VARCHAR
+      description: "Waste reason text (denormalized from waste_reasons)."
+    user_id:
+      type: VARCHAR
+      description: "POS user who registered the waste."
+    _loaded_at:
+      type: TIMESTAMP
+      description: "ETL load timestamp."
+    _source_blob:
+      type: VARCHAR
+      description: "Source blob for traceability."
+  joins:
+    to_location: |
+      -- Waste -> Terminal -> Installation -> Revenue Unit
+      JOIN munu.terminals t ON t.customer_id = aw.customer_id AND t.terminal_id = aw.terminal_id
+      JOIN munu.revenue_units ru ON ru.customer_id = t.customer_id AND ru.inid = t.inid
+    to_articles_unified: "au.customer_id = aw.customer_id AND au.article_id = aw.article_id"
+    to_waste_reasons: "wr.customer_id = aw.customer_id AND wr.wrid = aw.waste_reason_id"
+  gotchas:
+    - "Location join goes through terminals, NOT directly to revenue_units."
+    - "~760K rows — always filter by waste_date."
+    - "For location exclusion, use terminal subquery (see location-exclusion docs)."
+
+
+munu.waste_reasons:
+  domain: waste
+  description: "Waste reason codes. 12 rows. Low cardinality — good for grouping."
+  row_count: 12
+  primary_key: [customer_id, wrid]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    wrid:
+      type: VARCHAR
+      description: "Waste reason ID."
+    name:
+      type: VARCHAR
+      description: "Waste reason name."
+      values:
+        - "Slutt dag"          # End of day waste
+        - "Utgatt pa dato"     # Expired
+        - "Odelagt"            # Damaged
+        - "Kundeklage"         # Customer complaint
+        - "Intern rep."        # Internal use/samples
+        - "Smaksprove"         # Tasting/sampling
+    status:
+      type: VARCHAR
+      description: "Active/inactive status."
+    _loaded_at:
+      type: TIMESTAMP
+      description: "ETL load timestamp."
+
+
+# ============================================================================
+# DOMAIN: LABOR
+# Employees, shifts, scheduling, pay — sourced from Planday
+# ============================================================================
+
+planday.employees:
+  domain: labor
+  description: "Employee master data from Planday. 404 rows."
+  row_count: 404
+  primary_key: [id, portal_name]
+  columns:
+    id:
+      type: BIGINT
+      description: "Planday employee ID. Portal-scoped (not globally unique)."
+    portal_name:
+      type: VARCHAR
+      description: "Planday portal. 'oslo' or 'stavanger'."
+      values: ["oslo", "stavanger"]
+    first_name:
+      type: VARCHAR
+      description: "First name."
+    last_name:
+      type: VARCHAR
+      description: "Last name."
+    email:
+      type: VARCHAR
+      description: "Email address."
+    cell_phone:
+      type: VARCHAR
+      description: "Phone number."
+    employee_number:
+      type: VARCHAR
+      description: "Employee number."
+    hire_date:
+      type: DATE
+      description: "Date hired."
+    department_id:
+      type: BIGINT
+      description: "Primary department. FK to planday.departments."
+    loaded_at:
+      type: TIMESTAMPTZ
+      description: "ETL load timestamp."
+  joins:
+    to_departments: "d.id = e.department_id AND d.portal_name = e.portal_name"
+    to_shifts: "s.employee_id = e.id AND s.portal_name = e.portal_name"
+    to_punchclock: "pc.employee_id = e.id AND pc.portal_name = e.portal_name"
+    to_pay_rates: "pr.employee_id = e.id AND pr.portal_name = e.portal_name"
+
+
+planday.shifts:
+  domain: labor
+  description: >
+    Scheduled shifts. ~131K rows. Represents planned work hours (not actual).
+    For actual worked hours, use planday.punchclock_shifts.
+  row_count: 131_783
+  primary_key: [id, portal_name]
+  columns:
+    id:
+      type: BIGINT
+      description: "Shift ID."
+    portal_name:
+      type: VARCHAR
+      description: "Planday portal."
+      values: ["oslo", "stavanger"]
+    date:
+      type: DATE
+      description: "Shift date."
+    start_date_time:
+      type: TIMESTAMP
+      description: "Shift start time."
+    end_date_time:
+      type: TIMESTAMP
+      description: "Shift end time."
+    status:
+      type: VARCHAR
+      description: "Shift status."
+    department_id:
+      type: BIGINT
+      description: "Department. FK to planday.departments."
+    employee_id:
+      type: BIGINT
+      description: "Assigned employee. FK to planday.employees."
+    employee_group_id:
+      type: BIGINT
+      description: "Employee role group. FK to planday.employee_groups."
+    position_id:
+      type: BIGINT
+      description: "Position. FK to planday.positions."
+    shift_type_id:
+      type: BIGINT
+      description: "Shift type. FK to planday.shift_types."
+    punch_clock_shift_id:
+      type: BIGINT
+      description: "Linked punchclock record. FK to planday.punchclock_shifts."
+    comment:
+      type: VARCHAR
+      description: "Shift comment/notes."
+    date_time_created:
+      type: TIMESTAMPTZ
+      description: "When the shift was created."
+    date_time_modified:
+      type: TIMESTAMPTZ
+      description: "When the shift was last modified."
+    loaded_at:
+      type: TIMESTAMPTZ
+      description: "ETL load timestamp."
+  joins:
+    to_employees: "e.id = s.employee_id AND e.portal_name = s.portal_name"
+    to_departments: "d.id = s.department_id AND d.portal_name = s.portal_name"
+    to_employee_groups: "eg.id = s.employee_group_id AND eg.portal_name = s.portal_name"
+    to_location_via_dept: |
+      -- Shift -> Department -> department_mapping -> Revenue Unit
+      JOIN reference.department_mapping dm
+        ON dm.planday_department_id = s.department_id
+        AND dm.planday_portal_name = s.portal_name
+      JOIN munu.revenue_units ru
+        ON ru.customer_id = dm.munu_customer_id
+        AND ru.revenue_unit_id = dm.munu_revenue_unit_id
+
+
+planday.punchclock_shifts:
+  domain: labor
+  description: >
+    Actual clock in/out records. ~97K rows. Represents real worked hours.
+    Use this for actual labor cost calculations, not planday.shifts.
+  row_count: 97_188
+  primary_key: [id, portal_name]
+  columns:
+    id:
+      type: BIGINT
+      description: "Punchclock shift ID."
+    portal_name:
+      type: VARCHAR
+      description: "Planday portal."
+      values: ["oslo", "stavanger"]
+    date:
+      type: DATE
+      description: "Shift date."
+    clock_in:
+      type: TIMESTAMP
+      description: "Actual clock-in time."
+    clock_out:
+      type: TIMESTAMP
+      description: "Actual clock-out time."
+    hours_worked:
+      type: "DECIMAL(10,2)"
+      description: "Calculated hours worked."
+    break_minutes:
+      type: INTEGER
+      description: "Break duration in minutes."
+    status:
+      type: VARCHAR
+      description: "Punchclock status."
+    approved:
+      type: BOOLEAN
+      description: "Whether the shift was approved by a manager."
+    approved_by_employee_id:
+      type: BIGINT
+      description: "Manager who approved."
+    approved_at:
+      type: TIMESTAMPTZ
+      description: "When approved."
+    department_id:
+      type: BIGINT
+      description: "Department. FK to planday.departments."
+    employee_id:
+      type: BIGINT
+      description: "Employee. FK to planday.employees."
+    employee_group_id:
+      type: BIGINT
+      description: "Role group. FK to planday.employee_groups."
+    shift_id:
+      type: BIGINT
+      description: "Linked scheduled shift. FK to planday.shifts."
+    date_time_created:
+      type: TIMESTAMPTZ
+      description: "When the record was created."
+    date_time_modified:
+      type: TIMESTAMPTZ
+      description: "When the record was last modified."
+    loaded_at:
+      type: TIMESTAMPTZ
+      description: "ETL load timestamp."
+  joins:
+    to_employees: "e.id = pc.employee_id AND e.portal_name = pc.portal_name"
+    to_departments: "d.id = pc.department_id AND d.portal_name = pc.portal_name"
+    to_scheduled_shift: "s.id = pc.shift_id AND s.portal_name = pc.portal_name"
+    to_location_via_dept: |
+      JOIN reference.department_mapping dm
+        ON dm.planday_department_id = pc.department_id
+        AND dm.planday_portal_name = pc.portal_name
+      JOIN munu.revenue_units ru
+        ON ru.customer_id = dm.munu_customer_id
+        AND ru.revenue_unit_id = dm.munu_revenue_unit_id
+
+
+planday.departments:
+  domain: labor
+  description: "Planday departments (stores, production, admin). 38 rows."
+  row_count: 38
+  primary_key: [id, portal_name]
+  columns:
+    id:
+      type: BIGINT
+      description: "Department ID."
+    portal_name:
+      type: VARCHAR
+      description: "Planday portal."
+      values: ["oslo", "stavanger"]
+    name:
+      type: VARCHAR
+      description: "Department name."
+    number:
+      type: VARCHAR
+      description: "Department number."
+    loaded_at:
+      type: TIMESTAMPTZ
+      description: "ETL load timestamp."
+  joins:
+    to_department_mapping: "dm.planday_department_id = d.id AND dm.planday_portal_name = d.portal_name"
+
+
+planday.employee_groups:
+  domain: labor
+  description: >
+    Functional role groups (baker, butikkleder, konditor, etc). 31 rows.
+    Determines what type of work an employee does.
+  row_count: 31
+  primary_key: [id, portal_name]
+  columns:
+    id:
+      type: BIGINT
+      description: "Group ID."
+    portal_name:
+      type: VARCHAR
+      description: "Planday portal."
+    name:
+      type: VARCHAR
+      description: "Role name."
+      values:
+        - "Baker"
+        - "Baker S"                   # Baker special
+        - "Butikkleder"              # Store manager
+        - "Ass. butikkleder"         # Assistant store manager
+        - "Butikkmedarbeider"        # Store staff
+        - "Konditor"                 # Pastry chef
+        - "Kaffebrenner"             # Coffee roaster
+        - "Produksjonsleder"         # Production manager
+        - "Produksjonsmedarbeider"   # Production staff
+        - "Administrativ medarbeider" # Admin
+        - "Laerling Baker"           # Baker apprentice
+        - "Laerling Konditor"        # Pastry chef apprentice
+    loaded_at:
+      type: TIMESTAMPTZ
+      description: "ETL load timestamp."
+  gotchas:
+    - "Some groups are prefixed 'Gammel ikke i bruk' — these are inactive/legacy."
+
+
+planday.positions:
+  domain: labor
+  description: >
+    Employee position assignments (which employee works which role at which department).
+    471 rows.
+  row_count: 471
+  primary_key: [id, portal_name]
+  columns:
+    id:
+      type: BIGINT
+      description: "Position ID."
+    portal_name:
+      type: VARCHAR
+      description: "Planday portal."
+    name:
+      type: VARCHAR
+      description: "Position name."
+    is_active:
+      type: BOOLEAN
+      description: "Whether the position is active."
+    department_id:
+      type: BIGINT
+      description: "Department. FK to planday.departments."
+    employee_group_id:
+      type: BIGINT
+      description: "Role group. FK to planday.employee_groups."
+    affect_revenue:
+      type: BOOLEAN
+      description: "Whether this position affects revenue metrics."
+    revenue_unit_id:
+      type: BIGINT
+      description: "Planday revenue unit (not the same as munu.revenue_unit_id)."
+    start_date:
+      type: DATE
+      description: "Position start date."
+    loaded_at:
+      type: TIMESTAMPTZ
+      description: "ETL load timestamp."
+
+
+planday.pay_rates:
+  domain: labor
+  description: "Hourly pay rates per employee per role. 453 rows."
+  row_count: 453
+  primary_key: [employee_id, employee_group_id, portal_name]
+  columns:
+    employee_id:
+      type: BIGINT
+      description: "Employee ID."
+    employee_group_id:
+      type: BIGINT
+      description: "Role group ID."
+    portal_name:
+      type: VARCHAR
+      description: "Planday portal."
+    salary_code:
+      type: VARCHAR
+      description: "Salary code for payroll system."
+    wage_type:
+      type: VARCHAR
+      description: "Type of wage."
+    hourly_rate:
+      type: "DECIMAL(10,2)"
+      description: "Hourly pay rate in NOK."
+    loaded_at:
+      type: TIMESTAMPTZ
+      description: "ETL load timestamp."
+  joins:
+    to_employees: "e.id = pr.employee_id AND e.portal_name = pr.portal_name"
+    to_employee_groups: "eg.id = pr.employee_group_id AND eg.portal_name = pr.portal_name"
+
+
+planday.salaries:
+  domain: labor
+  description: "Monthly salary records for fixed-salary employees. 76 rows."
+  row_count: 76
+  primary_key: [employee_id, portal_name]
+  columns:
+    employee_id:
+      type: BIGINT
+      description: "Employee ID."
+    portal_name:
+      type: VARCHAR
+      description: "Planday portal."
+    monthly_salary:
+      type: "DECIMAL(12,2)"
+      description: "Monthly salary in NOK."
+    contracted_hours:
+      type: "DECIMAL(10,2)"
+      description: "Contracted monthly hours."
+    effective_hourly_rate:
+      type: "DECIMAL(10,2)"
+      description: "Salary / contracted hours."
+    valid_from:
+      type: DATE
+      description: "When this salary became effective."
+    salary_type_id:
+      type: INTEGER
+      description: "Salary type."
+    loaded_at:
+      type: TIMESTAMPTZ
+      description: "ETL load timestamp."
+
+
+planday.shift_types:
+  domain: labor
+  description: "Shift type definitions (regular, overtime, etc). 69 rows."
+  row_count: 69
+  primary_key: [id, portal_name]
+  columns:
+    id:
+      type: BIGINT
+      description: "Shift type ID."
+    portal_name:
+      type: VARCHAR
+      description: "Planday portal."
+    name:
+      type: VARCHAR
+      description: "Shift type name."
+    color:
+      type: VARCHAR
+      description: "Display color in Planday UI."
+    salary_code:
+      type: VARCHAR
+      description: "Salary code for payroll."
+    is_active:
+      type: BOOLEAN
+      description: "Whether this shift type is active."
+    pay_percentage:
+      type: "DECIMAL(5,2)"
+      description: "Pay modifier (e.g. 150% for overtime)."
+    payment_type:
+      type: VARCHAR
+      description: "How pay is calculated."
+      values: ["Percentage"]
+    allows_breaks:
+      type: BOOLEAN
+      description: "Whether breaks are allowed on this shift type."
+    allow_booking:
+      type: BOOLEAN
+      description: "Whether employees can self-book this shift type."
+    include_in_schedule_print:
+      type: BOOLEAN
+      description: "Whether included in printed schedules."
+    loaded_at:
+      type: TIMESTAMPTZ
+      description: "ETL load timestamp."
+
+
+munu.labor_shifts:
+  domain: labor
+  description: >
+    Labor shift data from Munu MDS. 0 ROWS — this table is empty.
+    Use planday.shifts and planday.punchclock_shifts instead.
+  row_count: 0
+  gotchas:
+    - "EMPTY TABLE. All labor data is in the planday schema."
+
+
+# ============================================================================
+# DOMAIN: EXTERNAL
+# Weather, cruise arrivals, school holidays, and other external factors
+# ============================================================================
+
+admin.weather_daily:
+  domain: external
+  description: "Daily weather data per region. 2,172 rows. Join on date + region for demand drivers."
+  row_count: 2172
+  primary_key: [region, date]
+  columns:
+    region:
+      type: VARCHAR
+      description: "Geographic region."
+      values: ["Oslo", "Stavanger"]
+    date:
+      type: DATE
+      description: "Calendar date."
+    temp_max:
+      type: "DECIMAL(5,1)"
+      description: "Maximum temperature (Celsius)."
+    temp_min:
+      type: "DECIMAL(5,1)"
+      description: "Minimum temperature (Celsius)."
+    precipitation_mm:
+      type: "DECIMAL(6,1)"
+      description: "Precipitation in millimeters."
+    weather_code:
+      type: INTEGER
+      description: "WMO weather code."
+    _loaded_at:
+      type: TIMESTAMP
+      description: "ETL load timestamp."
+  joins:
+    to_orders_by_date: >
+      Join on date. Map customer_id to region: 10352='Oslo', 761='Stavanger'.
+
+
+admin.cruise_arrivals:
+  domain: external
+  description: >
+    Cruise ship arrivals at Stavanger port. 3,382 rows.
+    Cruise passengers drive foot traffic at Stavanger stores.
+  row_count: 3382
+  primary_key: [source, arrival_date, vessel_name]
+  columns:
+    source:
+      type: VARCHAR
+      description: "Data source."
+      values: ["kystdata", "opencom"]
+    arrival_date:
+      type: DATE
+      description: "Arrival date."
+    arrival_time:
+      type: VARCHAR
+      description: "Arrival time (string, not TIME type)."
+    departure_time:
+      type: VARCHAR
+      description: "Departure time."
+    total_passengers:
+      type: INTEGER
+      description: "Number of passengers on board."
+    vessel_name:
+      type: VARCHAR
+      description: "Ship name."
+    vessel_gross_ton:
+      type: INTEGER
+      description: "Vessel size in gross tonnes."
+    vessel_passenger_capacity:
+      type: INTEGER
+      description: "Max passenger capacity."
+    vessel_length:
+      type: "DECIMAL(8,2)"
+      description: "Vessel length in meters."
+    from_location:
+      type: VARCHAR
+      description: "Previous port."
+    to_location:
+      type: VARCHAR
+      description: "Next port."
+    port_location:
+      type: VARCHAR
+      description: "Which Stavanger port."
+      values: ["Stavanger", "Stavanger Ost", "Finnoy", "Amoyfjorden ankring"]
+    _loaded_at:
+      type: TIMESTAMP
+      description: "ETL load timestamp."
+  gotchas:
+    - "Only Stavanger region — no Oslo cruise data."
+
+
+admin.school_holidays:
+  domain: external
+  description: "School holiday dates per region. 90 rows. Major demand driver."
+  row_count: 90
+  primary_key: [region, school_year, holiday_name]
+  columns:
+    region:
+      type: VARCHAR
+      description: "Geographic region."
+      values: ["Oslo", "Stavanger"]
+    school_year:
+      type: VARCHAR
+      description: "Academic year (e.g. '2024-2025')."
+    holiday_name:
+      type: VARCHAR
+      description: "Holiday period name."
+      values: ["Hostferie", "Juleferie", "Paskeferie", "Sommerferie", "Vinterferie"]
+    start_date:
+      type: DATE
+      description: "Holiday start date."
+    end_date:
+      type: DATE
+      description: "Holiday end date."
+  joins:
+    to_any_date_table: >
+      WHERE date BETWEEN sh.start_date AND sh.end_date AND region matches outlet.
+
+
+admin.forecast_parameters:
+  domain: external
+  description: "Forecast model parameters per location. 0 rows (not yet populated)."
+  row_count: 0
+  primary_key: [revenue_unit_id, param_group, param_key]
+
+
+admin.open_days:
+  domain: external
+  description: "Detected opening days per location. 0 rows (not yet populated)."
+  row_count: 0
+
+
+admin.settings:
+  domain: external
+  description: >
+    Application settings stored as key-value JSON. 3 rows.
+    Contains excluded_locations, category_mapping config, region_config.
+  row_count: 3
+  primary_key: [key]
+  columns:
+    key:
+      type: VARCHAR
+      description: "Setting key."
+      values: ["excluded_locations", "category_mapping", "region_config"]
+    value:
+      type: JSON
+      description: "Setting value as JSON."
+    updated_at:
+      type: TIMESTAMP
+      description: "When last updated."
+  gotchas:
+    - "excluded_locations contains a JSON array of revenue_unit_ids to hide from reports."
+
+
+admin.dashboard_layouts:
+  domain: external
+  description: "Saved dashboard layouts. 1 row. Application config, not analytics data."
+  row_count: 1
+
+
+# ============================================================================
+# DOMAIN: CAKEITEASY
+# Web order platform — completely separate from Munu POS
+# ============================================================================
+
+cakeiteasy.orders:
+  domain: cakeiteasy
+  description: "Web order headers from Cakeiteasy platform. 3,865 rows."
+  row_count: 3865
+  primary_key: [order_number, outlet_id]
+  columns:
+    order_number:
+      type: VARCHAR
+      description: "Order number."
+    outlet_id:
+      type: VARCHAR
+      description: "Web outlet identifier."
+      values: ["kanelsnurren_stavanger", "kanelsnurren_oslo", "kveitemjol", "mjol"]
+    order_date:
+      type: TIMESTAMPTZ
+      description: "Order timestamp."
+    customer_number:
+      type: VARCHAR
+      description: "Customer ID."
+    customer_name:
+      type: VARCHAR
+      description: "Customer name."
+    customer_company:
+      type: VARCHAR
+      description: "Company name (B2B orders)."
+    customer_org_number:
+      type: VARCHAR
+      description: "Company org number."
+    payment_date:
+      type: TIMESTAMPTZ
+      description: "Payment timestamp."
+    payment_method:
+      type: VARCHAR
+      description: "Payment method (Vipps, Klarna, etc)."
+    payment_amount:
+      type: "DECIMAL(12,2)"
+      description: "Payment amount."
+    delivery_date:
+      type: DATE
+      description: "Delivery/pickup date."
+    delivery_type:
+      type: VARCHAR
+      description: "Fulfillment type."
+      values: ["Pick up", "Delivery to door"]
+    delivery_address:
+      type: VARCHAR
+      description: "Delivery address."
+    outlet_number:
+      type: VARCHAR
+      description: "Pickup outlet number."
+    outlet_name:
+      type: VARCHAR
+      description: "Pickup outlet name."
+    outlet_address:
+      type: VARCHAR
+      description: "Pickup outlet address."
+    loaded_at:
+      type: TIMESTAMPTZ
+      description: "ETL load timestamp."
+
+
+cakeiteasy.order_lines:
+  domain: cakeiteasy
+  description: "Web order line items. 10,696 rows."
+  row_count: 10696
+  primary_key: [id, outlet_id]
+  columns:
+    id:
+      type: VARCHAR
+      description: "Composite ID (order_number + product_number)."
+    outlet_id:
+      type: VARCHAR
+      description: "Web outlet identifier."
+    order_number:
+      type: VARCHAR
+      description: "FK to cakeiteasy.orders."
+    product_number:
+      type: VARCHAR
+      description: "Product number. Use product_mapping to get names."
+    product_name:
+      type: VARCHAR
+      description: "Product name (usually NULL from API — use enriched view)."
+    category_name:
+      type: VARCHAR
+      description: "Category (often JSON from API — use enriched view)."
+    quantity:
+      type: INTEGER
+      description: "Quantity ordered."
+    loaded_at:
+      type: TIMESTAMPTZ
+      description: "ETL load timestamp."
+  gotchas:
+    - "product_name is usually NULL — use cakeiteasy.order_lines_enriched instead."
+
+
+cakeiteasy.order_lines_enriched:
+  domain: cakeiteasy
+  description: >
+    Order lines joined with product_mapping for human-readable names. 10,696 rows.
+    ALWAYS prefer this over cakeiteasy.order_lines.
+  row_count: 10696
+  columns:
+    id:
+      type: VARCHAR
+      description: "Composite ID."
+    outlet_id:
+      type: VARCHAR
+      description: "Web outlet."
+    order_number:
+      type: VARCHAR
+      description: "FK to orders."
+    product_number:
+      type: VARCHAR
+      description: "Product number."
+    product_name:
+      type: VARCHAR
+      description: "Resolved product name (from product_mapping)."
+    category:
+      type: VARCHAR
+      description: "Resolved category."
+    quantity:
+      type: INTEGER
+      description: "Quantity."
+    munu_article_number:
+      type: VARCHAR
+      description: "Matching Munu article number (if any, ~3% overlap)."
+    loaded_at:
+      type: TIMESTAMPTZ
+      description: "ETL load timestamp."
+
+
+cakeiteasy.orders_enriched:
+  domain: cakeiteasy
+  description: "Orders with aggregated product details. 3,865 rows."
+  row_count: 3865
+  columns:
+    total_items:
+      type: INTEGER
+      description: "Number of distinct products in order."
+    total_quantity:
+      type: INTEGER
+      description: "Total units ordered."
+    products_list:
+      type: VARCHAR
+      description: "Comma-separated product summary (e.g. 'Croissant x10, Kanelsnurr x5')."
+
+
+cakeiteasy.customers:
+  domain: cakeiteasy
+  description: "Web order customers. 2,044 rows."
+  row_count: 2044
+  primary_key: [customer_number, outlet_id]
+  columns:
+    customer_number:
+      type: VARCHAR
+      description: "Customer number."
+    outlet_id:
+      type: VARCHAR
+      description: "Outlet."
+    name:
+      type: VARCHAR
+      description: "Customer name."
+    company_name:
+      type: VARCHAR
+      description: "Company name."
+    organization_number:
+      type: VARCHAR
+      description: "Org number."
+    loaded_at:
+      type: TIMESTAMPTZ
+      description: "ETL load timestamp."
+
+
+cakeiteasy.deliveries:
+  domain: cakeiteasy
+  description: "Delivery records. 2,076 rows."
+  row_count: 2076
+  primary_key: [id, outlet_id]
+  columns:
+    id:
+      type: VARCHAR
+      description: "Delivery ID."
+    outlet_id:
+      type: VARCHAR
+      description: "Outlet."
+    delivery_date:
+      type: DATE
+      description: "Delivery date."
+    delivery_type:
+      type: VARCHAR
+      description: "Pickup or delivery."
+    delivery_address:
+      type: VARCHAR
+      description: "Address."
+    outlet_number:
+      type: VARCHAR
+      description: "Outlet number."
+    outlet_name:
+      type: VARCHAR
+      description: "Outlet name."
+    outlet_address:
+      type: VARCHAR
+      description: "Outlet address."
+    loaded_at:
+      type: TIMESTAMPTZ
+      description: "ETL load timestamp."
+
+
+cakeiteasy.payments:
+  domain: cakeiteasy
+  description: "Payment records. 3,871 rows."
+  row_count: 3871
+  primary_key: [id, outlet_id]
+  columns:
+    id:
+      type: VARCHAR
+      description: "Payment ID."
+    outlet_id:
+      type: VARCHAR
+      description: "Outlet."
+    payment_date:
+      type: TIMESTAMPTZ
+      description: "Payment timestamp."
+    payment_method:
+      type: VARCHAR
+      description: "Payment method."
+    amount:
+      type: "DECIMAL(12,2)"
+      description: "Amount."
+    loaded_at:
+      type: TIMESTAMPTZ
+      description: "ETL load timestamp."
+
+
+cakeiteasy.product_mapping:
+  domain: cakeiteasy
+  description: >
+    Manual product name mapping. 60 rows. Translates product_number to
+    human-readable names since the API doesn't return them.
+  row_count: 60
+  primary_key: [product_number]
+  columns:
+    product_number:
+      type: VARCHAR
+      description: "Cakeiteasy product number."
+    product_name:
+      type: VARCHAR
+      description: "Human-readable product name."
+    category:
+      type: VARCHAR
+      description: "Product category."
+    munu_article_number:
+      type: VARCHAR
+      description: "Matching Munu article number (only ~3% overlap)."
+    notes:
+      type: VARCHAR
+      description: "Notes."
+    created_at:
+      type: TIMESTAMPTZ
+      description: "Created."
+    updated_at:
+      type: TIMESTAMPTZ
+      description: "Updated."
+
+
+cakeiteasy.products:
+  domain: cakeiteasy
+  description: "Product catalog from API. 0 rows (API endpoint failing)."
+  row_count: 0
+
+
+# ============================================================================
+# EXCLUDED FROM LLM CONTEXT
+# ETL internals and test tables
+# ============================================================================
+
+munu._etl_state:
+  domain: _meta
+  exclude_from_llm: true
+  description: "ETL state tracking for Munu incremental loads."
+
+planday._etl_state:
+  domain: _meta
+  exclude_from_llm: true
+  description: "ETL state tracking for Planday loads."
+
+cakeiteasy._etl_state:
+  domain: _meta
+  exclude_from_llm: true
+  description: "ETL state tracking for Cakeiteasy loads."
+
+munu.test_write:
+  domain: _meta
+  exclude_from_llm: true
+  description: "Test table. 1 row. Ignore."
+
+
+# ============================================================================
+# CROSS-DOMAIN JOIN RECIPES
+# Common multi-table patterns for the LLM to follow
+# ============================================================================
+
+join_recipes:
+
+  sales_by_location:
+    description: "Revenue by store"
+    domains: [sales, locations]
+    sql: |
+      SELECT ru.name AS location, SUM(ol.net_amount) AS revenue
+      FROM munu.orders o
+      JOIN munu.order_lines ol ON o.customer_id = ol.customer_id AND o.soid = ol.soid
+      JOIN munu.revenue_units ru ON o.customer_id = ru.customer_id AND o.revenue_unit_id = ru.revenue_unit_id
+      WHERE ol.net_amount IS NOT NULL  -- exclude bundle components
+        AND o.order_date BETWEEN ? AND ?
+      GROUP BY ru.name
+
+  sales_by_category:
+    description: "Revenue by product category"
+    domains: [sales, products]
+    sql: |
+      SELECT au.category, au.subcategory, SUM(ol.net_amount) AS revenue, SUM(ol.quantity) AS units
+      FROM munu.order_lines ol
+      JOIN munu.articles_unified au ON ol.customer_id = au.customer_id AND ol.article_id = au.article_id
+      WHERE ol.net_amount IS NOT NULL
+        AND au.category_is_active = true
+      GROUP BY au.category, au.subcategory
+
+  waste_by_location:
+    description: "Waste cost by store"
+    domains: [waste, locations]
+    sql: |
+      SELECT ru.name AS location, SUM(aw.total_cost) AS waste_cost
+      FROM munu.article_waste aw
+      JOIN munu.terminals t ON aw.customer_id = t.customer_id AND aw.terminal_id = t.terminal_id
+      JOIN munu.revenue_units ru ON t.customer_id = ru.customer_id AND t.inid = ru.inid
+      WHERE aw.waste_date BETWEEN ? AND ?
+      GROUP BY ru.name
+
+  waste_by_product:
+    description: "Waste by product with category"
+    domains: [waste, products]
+    sql: |
+      SELECT au.category, aw.article_name, SUM(aw.quantity) AS qty, SUM(aw.total_cost) AS cost
+      FROM munu.article_waste aw
+      JOIN munu.articles_unified au ON aw.customer_id = au.customer_id AND aw.article_id = au.article_id
+      WHERE au.category_is_active = true
+        AND aw.waste_date BETWEEN ? AND ?
+      GROUP BY au.category, aw.article_name
+
+  labor_hours_by_location:
+    description: "Actual worked hours by store (from punchclock)"
+    domains: [labor, locations]
+    sql: |
+      SELECT dm.display_name AS location, SUM(pc.hours_worked) AS total_hours
+      FROM planday.punchclock_shifts pc
+      JOIN reference.department_mapping dm
+        ON dm.planday_department_id = pc.department_id
+        AND dm.planday_portal_name = pc.portal_name
+      WHERE dm.mapping_type = 'store'
+        AND pc.date BETWEEN ? AND ?
+      GROUP BY dm.display_name
+
+  labor_cost_by_role:
+    description: "Labor cost by employee role"
+    domains: [labor]
+    sql: |
+      SELECT eg.name AS role, SUM(pc.hours_worked) AS hours, SUM(pc.hours_worked * pr.hourly_rate) AS cost
+      FROM planday.punchclock_shifts pc
+      JOIN planday.employee_groups eg ON eg.id = pc.employee_group_id AND eg.portal_name = pc.portal_name
+      JOIN planday.pay_rates pr ON pr.employee_id = pc.employee_id
+        AND pr.employee_group_id = pc.employee_group_id AND pr.portal_name = pc.portal_name
+      WHERE pc.date BETWEEN ? AND ?
+      GROUP BY eg.name
+
+  revenue_per_labor_hour:
+    description: "Sales per labor hour by location (cross-schema)"
+    domains: [sales, labor, locations]
+    sql: |
+      WITH daily_sales AS (
+        SELECT o.order_date, ru.name AS location,
+          ru.customer_id, ru.revenue_unit_id,
+          SUM(ol.net_amount) AS revenue
+        FROM munu.orders o
+        JOIN munu.order_lines ol ON o.customer_id = ol.customer_id AND o.soid = ol.soid
+        JOIN munu.revenue_units ru ON o.customer_id = ru.customer_id AND o.revenue_unit_id = ru.revenue_unit_id
+        WHERE ol.net_amount IS NOT NULL AND o.order_date BETWEEN ? AND ?
+        GROUP BY o.order_date, ru.name, ru.customer_id, ru.revenue_unit_id
+      ),
+      daily_hours AS (
+        SELECT pc.date, dm.display_name AS location,
+          dm.munu_customer_id, dm.munu_revenue_unit_id,
+          SUM(pc.hours_worked) AS hours
+        FROM planday.punchclock_shifts pc
+        JOIN reference.department_mapping dm
+          ON dm.planday_department_id = pc.department_id AND dm.planday_portal_name = pc.portal_name
+        WHERE dm.mapping_type = 'store' AND pc.date BETWEEN ? AND ?
+        GROUP BY pc.date, dm.display_name, dm.munu_customer_id, dm.munu_revenue_unit_id
+      )
+      SELECT s.location, SUM(s.revenue) AS revenue, SUM(h.hours) AS hours,
+        SUM(s.revenue) / NULLIF(SUM(h.hours), 0) AS revenue_per_hour
+      FROM daily_sales s
+      JOIN daily_hours h ON s.order_date = h.date
+        AND s.customer_id = h.munu_customer_id
+        AND s.revenue_unit_id = h.munu_revenue_unit_id
+      GROUP BY s.location
+
+  weather_impact_on_sales:
+    description: "Sales correlated with weather"
+    domains: [sales, external, locations]
+    sql: |
+      SELECT o.order_date, w.temp_max, w.precipitation_mm,
+        COUNT(DISTINCT o.soid) AS orders, SUM(ol.net_amount) AS revenue
+      FROM munu.orders o
+      JOIN munu.order_lines ol ON o.customer_id = ol.customer_id AND o.soid = ol.soid
+      JOIN admin.weather_daily w ON o.order_date = w.date
+        AND CASE WHEN o.customer_id = 10352 THEN 'Oslo' ELSE 'Stavanger' END = w.region
+      WHERE ol.net_amount IS NOT NULL AND o.order_date BETWEEN ? AND ?
+      GROUP BY o.order_date, w.temp_max, w.precipitation_mm
+
+
+# ============================================================================
+# GLOBAL GOTCHAS — Critical rules for ALL queries
+# ============================================================================
+
+global_rules:
+  id_types: >
+    ALL ID fields are VARCHAR (string) even when values look numeric.
+    Only soid (BIGINT) and customer_id (INTEGER) are numeric.
+    Never cast IDs to integers.
+
+  customer_id_meaning: >
+    customer_id is the outlet/company identifier, NOT an end-customer.
+    10352 = KS Oslo, 761 = KS Stavanger.
+    Always include customer_id in cross-table joins.
+
+  location_join: >
+    NEVER use orders.inid for location joins — it is always empty.
+    Use: o.customer_id = ru.customer_id AND o.revenue_unit_id = ru.revenue_unit_id
+
+  waste_location_join: >
+    Waste has no revenue_unit_id. Join path is:
+    article_waste -> terminals (on terminal_id) -> revenue_units (on inid)
+
+  bundle_items: >
+    Multi-item bundles create dual line items. For revenue: WHERE net_amount IS NOT NULL.
+    For production/item counts: exclude bundle SKUs matching '\d+.*\bfor\s+\d+'.
+
+  active_categories: >
+    Always filter munu.articles_unified WHERE category_is_active = true
+    to exclude ~354 legacy/test items.
+
+  planday_vs_munu_locations: >
+    Planday departments are NOT the same as Munu revenue units.
+    Bridge them via reference.department_mapping.
+
+  large_tables: >
+    Always add date filters on: orders (~8M), order_lines (~16M),
+    order_payments (~8M), article_waste (~760K), shifts (~131K), punchclock_shifts (~97K).
+
+  excluded_locations: >
+    Check admin.settings WHERE key='excluded_locations' for revenue_unit_ids
+    that should be hidden from reports.
+
+  currency: >
+    All monetary values are in NOK (Norwegian Kroner).
+
+  net_vs_gross: >
+    Use net_amount (excl VAT) for revenue reporting. Avoid gross_amount.

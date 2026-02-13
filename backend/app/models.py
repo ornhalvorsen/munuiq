@@ -13,6 +13,7 @@ ALLOWED_MODELS = {
 class AskRequest(BaseModel):
     question: str
     model: str = "claude-sonnet-4-5-20250929"
+    insight_model: Optional[str] = None  # Defaults to model if not set
 
 
 class DashboardRequest(BaseModel):

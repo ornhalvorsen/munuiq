@@ -7,3 +7,4 @@ python-dotenv==1.0.1
 pydantic-settings==2.7.1
 PyJWT[crypto]>=2.8.0
 slowapi>=0.1.9
+PyYAML>=6.0

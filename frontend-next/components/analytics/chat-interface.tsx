@@ -27,8 +27,9 @@ import {
 } from "lucide-react";
 
 const MODELS = [
-  { id: "claude-sonnet-4-5-20250929", label: "Sonnet 4.5" },
-  { id: "claude-opus-4-6", label: "Opus 4.6" },
+  { id: "claude-haiku-4-5-20251001", label: "Haiku" },
+  { id: "claude-sonnet-4-5-20250929", label: "Sonnet" },
+  { id: "claude-opus-4-6", label: "Opus" },
 ] as const;
 
 interface ChatEntry {
@@ -138,7 +139,8 @@ function TimingBadge({ response }: { response: AskResponse }) {
 
 export function ChatInterface() {
   const [question, setQuestion] = useState("");
-  const [model, setModel] = useState("claude-sonnet-4-5-20250929");
+  const [sqlModel, setSqlModel] = useState("claude-sonnet-4-5-20250929");
+  const [insightModel, setInsightModel] = useState("claude-haiku-4-5-20251001");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<ChatEntry[]>([]);
@@ -151,7 +153,7 @@ export function ChatInterface() {
     setLoading(true);
 
     try {
-      const resp = await askQuestion(question.trim(), model);
+      const resp = await askQuestion(question.trim(), sqlModel, insightModel);
       setHistory((prev) => [
         { response: resp, feedbackGiven: null, sqlExpanded: false },
         ...prev,
@@ -190,18 +192,35 @@ export function ChatInterface() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-1.5">
-        {MODELS.map((m) => (
-          <Button
-            key={m.id}
-            variant={model === m.id ? "default" : "outline"}
-            size="sm"
-            onClick={() => setModel(m.id)}
-            className="text-xs"
-          >
-            {m.label}
-          </Button>
-        ))}
+      <div className="flex items-center gap-4 text-xs">
+        <div className="flex items-center gap-1.5">
+          <span className="text-muted-foreground font-medium">SQL</span>
+          {MODELS.map((m) => (
+            <Button
+              key={m.id}
+              variant={sqlModel === m.id ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSqlModel(m.id)}
+              className="text-xs h-7 px-2"
+            >
+              {m.label}
+            </Button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-muted-foreground font-medium">Insight</span>
+          {MODELS.map((m) => (
+            <Button
+              key={m.id}
+              variant={insightModel === m.id ? "default" : "outline"}
+              size="sm"
+              onClick={() => setInsightModel(m.id)}
+              className="text-xs h-7 px-2"
+            >
+              {m.label}
+            </Button>
+          ))}
+        </div>
       </div>
 
       <form onSubmit={handleAsk} className="flex gap-2">

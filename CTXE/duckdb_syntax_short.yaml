@@ -1,0 +1,50 @@
+# DuckDB SQL Quick Reference (for LLM context injection)
+# Only covers what differs from standard SQL or trips up models.
+
+dates:
+  today: CURRENT_DATE
+  now: NOW()
+  interval: "CURRENT_DATE - INTERVAL '30 days'"
+  datediff: "DATE_DIFF('day', start, end)  -- part first"
+  trunc: "DATE_TRUNC('week', date)  -- Monday start"
+  extract: "YEAR(date), MONTH(date), EXTRACT(ISODOW FROM date)  -- 1=Mon"
+  format: "STRFTIME(date, '%Y-%m-%d')"
+  generate: "UNNEST(GENERATE_SERIES(DATE '2025-01-01', CURRENT_DATE, INTERVAL '1 day'))::DATE"
+
+strings:
+  ilike: "name ILIKE '%snurr%'  -- case-insensitive"
+  regex: "regexp_matches(name, '\\d+.*for\\s+\\d+')  -- returns BOOL"
+  agg: "STRING_AGG(name, ', ' ORDER BY name)"
+
+aggregation:
+  filter: "SUM(x) FILTER (WHERE condition)  -- conditional agg"
+  median: "MEDIAN(x)  -- built-in"
+  mode: "MODE(x)  -- most frequent"
+  approx: "APPROX_COUNT_DISTINCT(x)"
+
+windows:
+  qualify: |
+    -- Top N per group without subquery
+    SELECT * FROM t
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY grp ORDER BY val DESC) <= 3
+  moving_avg: "AVG(x) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)"
+  growth: "x / NULLIF(LAG(x) OVER (ORDER BY date), 0) - 1"
+
+duckdb_only:
+  exclude_cols: "SELECT * EXCLUDE (_loaded_at, _source_blob) FROM t"
+  group_by_all: "GROUP BY ALL  -- auto-group non-aggregate columns"
+  sample: "FROM t USING SAMPLE 1000"
+  try_cast: "TRY_CAST(x AS INTEGER)  -- NULL on failure"
+  asof_join: "FROM a ASOF JOIN b ON a.date >= b.date"
+  pivot: "PIVOT t ON col USING SUM(val) GROUP BY grp"
+  unnest: "SELECT UNNEST(STRING_SPLIT('a,b,c', ','))"
+
+gotchas:
+  - "Integer / Integer = Integer. Cast to DECIMAL for decimal division."
+  - "NULLIF(denominator, 0) to prevent division by zero."
+  - "INTERVAL needs quotes: INTERVAL '7 days' not INTERVAL 7 DAY"
+  - "DATE_DIFF arg order: (part, start, end)"
+  - "regexp_matches() is BOOL — use in WHERE, not SELECT"
+  - "IDs are VARCHAR even when numeric — don't cast to INT"
+  - ":: casting works like PostgreSQL: x::DATE, x::VARCHAR"
+  - "Identifiers are case-insensitive. Quote with double-quotes if needed."
