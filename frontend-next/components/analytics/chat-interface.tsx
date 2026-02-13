@@ -12,12 +12,123 @@ import {
   submitFeedback,
   AskResponse,
 } from "@/lib/api/analytics";
-import { Send, ThumbsUp, ThumbsDown, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import {
+  Send,
+  ThumbsUp,
+  ThumbsDown,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Zap,
+  Clock,
+  Database,
+  Brain,
+  Coins,
+} from "lucide-react";
 
 interface ChatEntry {
   response: AskResponse;
   feedbackGiven: "up" | "down" | null;
   sqlExpanded: boolean;
+}
+
+function formatCost(usd: number): string {
+  if (usd < 0.001) return `${(usd * 100).toFixed(3)}c`;
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  return `$${usd.toFixed(3)}`;
+}
+
+function CacheBadge({ tier }: { tier: string }) {
+  const labels: Record<string, string> = {
+    response: "Cached",
+    common: "Common Query",
+    sql: "SQL Cached",
+  };
+  return (
+    <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400 border-0 text-[10px]">
+      <Zap className="mr-0.5 h-2.5 w-2.5" />
+      {labels[tier] ?? tier}
+    </Badge>
+  );
+}
+
+function ProviderBadge({ provider }: { provider: string }) {
+  const isOllama = provider === "ollama";
+  return (
+    <Badge
+      className={
+        isOllama
+          ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border-0 text-[10px]"
+          : "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400 border-0 text-[10px]"
+      }
+    >
+      <Brain className="mr-0.5 h-2.5 w-2.5" />
+      {provider}
+    </Badge>
+  );
+}
+
+function TimingBadge({ response }: { response: AskResponse }) {
+  const isCachedResponse = response.cache_tier === "response";
+
+  const total =
+    (response.sql_time_ms ?? 0) +
+    (response.query_time_ms ?? 0) +
+    (response.insight_time_ms ?? 0);
+
+  const hasTokens =
+    response.input_tokens != null && response.output_tokens != null;
+  const totalTokens = hasTokens
+    ? response.input_tokens! + response.output_tokens!
+    : 0;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+      {response.provider && <ProviderBadge provider={response.provider} />}
+      {response.cache_tier && <CacheBadge tier={response.cache_tier} />}
+
+      {!isCachedResponse && (
+        <>
+          {response.sql_time_ms != null && (
+            <Badge variant="outline" className="gap-0.5 text-[10px] font-normal">
+              <Brain className="h-2.5 w-2.5" />
+              SQL {response.sql_time_ms}ms
+            </Badge>
+          )}
+          {response.query_time_ms != null && (
+            <Badge variant="outline" className="gap-0.5 text-[10px] font-normal">
+              <Database className="h-2.5 w-2.5" />
+              Query {response.query_time_ms}ms
+            </Badge>
+          )}
+          {response.insight_time_ms != null && (
+            <Badge variant="outline" className="gap-0.5 text-[10px] font-normal">
+              <Brain className="h-2.5 w-2.5" />
+              Insight {response.insight_time_ms}ms
+            </Badge>
+          )}
+          {total > 0 && (
+            <Badge variant="outline" className="gap-0.5 text-[10px] font-medium">
+              <Clock className="h-2.5 w-2.5" />
+              {total}ms
+            </Badge>
+          )}
+        </>
+      )}
+
+      {hasTokens && (
+        <Badge
+          className="bg-green-50 text-green-800 dark:bg-green-900/30 dark:text-green-400 border-0 text-[10px]"
+          title={`Input: ${response.input_tokens} tokens | Output: ${response.output_tokens} tokens`}
+        >
+          <Coins className="mr-0.5 h-2.5 w-2.5" />
+          {totalTokens} tok
+          {response.estimated_cost_usd != null &&
+            ` ~ ${formatCost(response.estimated_cost_usd)}`}
+        </Badge>
+      )}
+    </div>
+  );
 }
 
 export function ChatInterface() {
@@ -54,7 +165,9 @@ export function ChatInterface() {
     try {
       await submitFeedback(entry.response.interaction_id, feedback);
       setHistory((prev) =>
-        prev.map((e, i) => (i === index ? { ...e, feedbackGiven: feedback } : e))
+        prev.map((e, i) =>
+          i === index ? { ...e, feedbackGiven: feedback } : e
+        )
       );
     } catch {
       // Ignore feedback errors
@@ -73,7 +186,7 @@ export function ChatInterface() {
     <div className="space-y-4">
       <form onSubmit={handleAsk} className="flex gap-2">
         <Input
-          placeholder="Ask about your restaurant data..."
+          placeholder="Ask a question about the restaurant data..."
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           disabled={loading}
@@ -100,23 +213,9 @@ export function ChatInterface() {
           return (
             <Card key={idx}>
               <CardContent className="space-y-3 pt-4">
-                <div className="flex items-start justify-between">
-                  <p className="font-medium">{r.question}</p>
-                  <div className="flex items-center gap-1">
-                    {r.cached && (
-                      <Badge variant="secondary" className="text-xs">
-                        {r.cache_tier === "response"
-                          ? "Cached"
-                          : r.cache_tier === "common"
-                            ? "Common Query"
-                            : "SQL Cached"}
-                      </Badge>
-                    )}
-                    <Badge variant="outline" className="text-xs">
-                      {r.provider} {r.sql_time_ms}ms
-                    </Badge>
-                  </div>
-                </div>
+                <p className="font-medium">Q: {r.question}</p>
+
+                <TimingBadge response={r} />
 
                 <p className="text-sm text-muted-foreground">{r.insight}</p>
 
@@ -132,7 +231,7 @@ export function ChatInterface() {
 
                 <div className="flex items-center justify-between">
                   <button
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                     onClick={() => toggleSql(idx)}
                   >
                     {entry.sqlExpanded ? (
@@ -140,39 +239,49 @@ export function ChatInterface() {
                     ) : (
                       <ChevronRight className="h-3 w-3" />
                     )}
-                    SQL
+                    SQL Query
                   </button>
 
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      disabled={!!entry.feedbackGiven}
-                      onClick={() => handleFeedback(idx, "up")}
-                      style={{
-                        opacity: entry.feedbackGiven && entry.feedbackGiven !== "up" ? 0.3 : 1,
-                      }}
-                    >
-                      <ThumbsUp className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      disabled={!!entry.feedbackGiven}
-                      onClick={() => handleFeedback(idx, "down")}
-                      style={{
-                        opacity: entry.feedbackGiven && entry.feedbackGiven !== "down" ? 0.3 : 1,
-                      }}
-                    >
-                      <ThumbsDown className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
+                  {r.interaction_id && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        disabled={!!entry.feedbackGiven}
+                        onClick={() => handleFeedback(idx, "up")}
+                        style={{
+                          opacity:
+                            entry.feedbackGiven &&
+                            entry.feedbackGiven !== "up"
+                              ? 0.3
+                              : 1,
+                        }}
+                      >
+                        <ThumbsUp className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        disabled={!!entry.feedbackGiven}
+                        onClick={() => handleFeedback(idx, "down")}
+                        style={{
+                          opacity:
+                            entry.feedbackGiven &&
+                            entry.feedbackGiven !== "down"
+                              ? 0.3
+                              : 1,
+                        }}
+                      >
+                        <ThumbsDown className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 {entry.sqlExpanded && (
-                  <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs">
+                  <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs font-mono">
                     {r.sql}
                   </pre>
                 )}
