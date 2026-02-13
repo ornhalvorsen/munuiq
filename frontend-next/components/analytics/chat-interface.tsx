@@ -13,6 +13,13 @@ import {
   AskResponse,
 } from "@/lib/api/analytics";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Send,
   ThumbsUp,
   ThumbsDown,
@@ -25,6 +32,14 @@ import {
   Brain,
   Coins,
 } from "lucide-react";
+
+const MODELS = [
+  { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5", provider: "claude" },
+  { id: "claude-sonnet-4-5-20250929", label: "Sonnet 4.5", provider: "claude" },
+  { id: "claude-opus-4-6", label: "Opus 4.6", provider: "claude" },
+  { id: "ollama:sqlcoder", label: "SQLCoder", provider: "ollama" },
+  { id: "ollama:duckdb-nsql", label: "DuckDB-NSQL", provider: "ollama" },
+] as const;
 
 interface ChatEntry {
   response: AskResponse;
@@ -133,6 +148,7 @@ function TimingBadge({ response }: { response: AskResponse }) {
 
 export function ChatInterface() {
   const [question, setQuestion] = useState("");
+  const [model, setModel] = useState("claude-sonnet-4-5-20250929");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<ChatEntry[]>([]);
@@ -145,7 +161,7 @@ export function ChatInterface() {
     setLoading(true);
 
     try {
-      const resp = await askQuestion(question.trim());
+      const resp = await askQuestion(question.trim(), model);
       setHistory((prev) => [
         { response: resp, feedbackGiven: null, sqlExpanded: false },
         ...prev,
@@ -192,6 +208,18 @@ export function ChatInterface() {
           disabled={loading}
           className="flex-1"
         />
+        <Select value={model} onValueChange={setModel}>
+          <SelectTrigger className="w-[140px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {MODELS.map((m) => (
+              <SelectItem key={m.id} value={m.id}>
+                {m.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Button type="submit" disabled={loading || !question.trim()}>
           {loading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
