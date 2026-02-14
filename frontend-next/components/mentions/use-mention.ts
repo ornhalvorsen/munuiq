@@ -46,6 +46,45 @@ function segmentsToPlainText(segments: Segment[]): string {
 }
 
 /**
+ * Rebuild segments from new plain text, preserving existing mention segments
+ * if their text representation still exists in the new text.
+ */
+function rebuildSegments(prev: Segment[], newPlainText: string): Segment[] {
+  const mentionSegments = prev.filter((s) => s.kind === "mention");
+
+  if (mentionSegments.length === 0) {
+    return [{ kind: "text", text: newPlainText }];
+  }
+
+  let remaining = newPlainText;
+  const newSegments: Segment[] = [];
+  let allMentionsFound = true;
+
+  for (const m of mentionSegments) {
+    const mentionText = m.mention.trigger.char + m.mention.entity.label;
+    const pos = remaining.indexOf(mentionText);
+    if (pos === -1) {
+      allMentionsFound = false;
+      break;
+    }
+    if (pos > 0) {
+      newSegments.push({ kind: "text", text: remaining.slice(0, pos) });
+    }
+    newSegments.push(m);
+    remaining = remaining.slice(pos + mentionText.length);
+  }
+
+  if (allMentionsFound) {
+    if (remaining || newSegments.length === 0) {
+      newSegments.push({ kind: "text", text: remaining });
+    }
+    return newSegments;
+  }
+
+  return [{ kind: "text", text: newPlainText }];
+}
+
+/**
  * Find trigger at cursor position by scanning backward from cursor in the
  * current text segment for a trigger char preceded by whitespace or at start.
  */
@@ -54,24 +93,55 @@ function detectTrigger(
   cursorInText: number,
   triggers: MentionTriggerConfig[]
 ): { trigger: MentionTriggerConfig; query: string; triggerPos: number } | null {
-  // Scan backward from cursor to find trigger char
   const beforeCursor = text.slice(0, cursorInText);
 
   for (const trigger of triggers) {
-    // Find last occurrence of trigger char
     const lastIdx = beforeCursor.lastIndexOf(trigger.char);
     if (lastIdx === -1) continue;
 
     // Must be preceded by whitespace or at start of text
     if (lastIdx > 0 && !/\s/.test(beforeCursor[lastIdx - 1])) continue;
 
-    // Extract query (text between trigger char and cursor)
     const query = beforeCursor.slice(lastIdx + 1);
 
     // Query must not contain newlines
     if (query.includes("\n")) continue;
 
     return { trigger, query, triggerPos: lastIdx };
+  }
+
+  return null;
+}
+
+/**
+ * Find which text segment the cursor is in, and where within that segment.
+ */
+function findCursorSegment(
+  segments: Segment[],
+  cursorOffset: number
+): { segmentIndex: number; cursorInText: number } | null {
+  let charCount = 0;
+
+  for (let i = 0; i < segments.length; i++) {
+    const s = segments[i];
+    const len =
+      s.kind === "text"
+        ? s.text.length
+        : s.mention.trigger.char.length + s.mention.entity.label.length;
+    if (charCount + len >= cursorOffset && s.kind === "text") {
+      return { segmentIndex: i, cursorInText: cursorOffset - charCount };
+    }
+    charCount += len;
+  }
+
+  // Cursor at the end — find last text segment
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (segments[i].kind === "text") {
+      return {
+        segmentIndex: i,
+        cursorInText: (segments[i] as { kind: "text"; text: string }).text.length,
+      };
+    }
   }
 
   return null;
@@ -86,11 +156,13 @@ function filterEntities(
 ): MentionEntity[] {
   if (!query) return entities.slice(0, 20);
   const q = query.toLowerCase();
-  return entities.filter(
-    (e) =>
-      e.label.toLowerCase().includes(q) ||
-      (e.description && e.description.toLowerCase().includes(q))
-  ).slice(0, 20);
+  return entities
+    .filter(
+      (e) =>
+        e.label.toLowerCase().includes(q) ||
+        (e.description && e.description.toLowerCase().includes(q))
+    )
+    .slice(0, 20);
 }
 
 export function useMention(config: UseMentionConfig): UseMentionReturn {
@@ -99,6 +171,10 @@ export function useMention(config: UseMentionConfig): UseMentionReturn {
   ]);
   const [autocomplete, setAutocomplete] =
     useState<AutocompleteState>(EMPTY_AUTOCOMPLETE);
+
+  // Ref to always have the latest segments (avoids stale closures)
+  const segmentsRef = useRef(segments);
+  segmentsRef.current = segments;
 
   // Store the cursor position and trigger info for mention insertion
   const triggerInfoRef = useRef<{
@@ -109,131 +185,49 @@ export function useMention(config: UseMentionConfig): UseMentionReturn {
 
   const handleInput = useCallback(
     (newPlainText: string, cursorOffset: number) => {
-      // Rebuild segments: keep existing mentions in place, update text around them
-      setSegments((prev) => {
-        // Figure out where mentions are in the old plain text
-        const oldParts: Array<{
-          type: "text" | "mention";
-          text: string;
-          segIdx: number;
-        }> = [];
-        for (let i = 0; i < prev.length; i++) {
-          const s = prev[i];
-          if (s.kind === "text") {
-            oldParts.push({ type: "text", text: s.text, segIdx: i });
-          } else {
-            const mentionText = s.mention.trigger.char + s.mention.entity.label;
-            oldParts.push({ type: "mention", text: mentionText, segIdx: i });
-          }
-        }
-        const oldPlain = oldParts.map((p) => p.text).join("");
+      // 1. Compute new segments (pure, no side effects)
+      const newSegments = rebuildSegments(segmentsRef.current, newPlainText);
 
-        // If the new text still contains all mention strings in order, keep them
-        // Otherwise just replace with plain text
-        const mentionSegments = prev.filter((s) => s.kind === "mention");
-        let remaining = newPlainText;
-        const newSegments: Segment[] = [];
-        let mentionIdx = 0;
-        let allMentionsFound = true;
+      // 2. Detect trigger in the new segments
+      const cursorInfo = findCursorSegment(newSegments, cursorOffset);
 
-        for (const m of mentionSegments) {
-          const mentionText =
-            m.mention.trigger.char + m.mention.entity.label;
-          const pos = remaining.indexOf(mentionText);
-          if (pos === -1) {
-            allMentionsFound = false;
-            break;
-          }
-          // Text before this mention
-          if (pos > 0) {
-            newSegments.push({ kind: "text", text: remaining.slice(0, pos) });
-          }
-          newSegments.push(m);
-          remaining = remaining.slice(pos + mentionText.length);
-          mentionIdx++;
-        }
+      let newAutocomplete = EMPTY_AUTOCOMPLETE;
 
-        if (allMentionsFound) {
-          // Add remaining text
-          if (remaining || newSegments.length === 0) {
-            newSegments.push({ kind: "text", text: remaining });
-          }
-          return newSegments;
-        }
+      if (cursorInfo) {
+        const { segmentIndex, cursorInText } = cursorInfo;
+        const seg = newSegments[segmentIndex];
 
-        // Fallback: just plain text
-        return [{ kind: "text", text: newPlainText }];
-      });
+        if (seg.kind === "text") {
+          const result = detectTrigger(seg.text, cursorInText, config.triggers);
 
-      // Detect trigger for autocomplete
-      // Find which text segment the cursor is in
-      setSegments((currentSegments) => {
-        let charCount = 0;
-        let cursorSegIdx = -1;
-        let cursorInText = 0;
-
-        for (let i = 0; i < currentSegments.length; i++) {
-          const s = currentSegments[i];
-          const len =
-            s.kind === "text"
-              ? s.text.length
-              : s.mention.trigger.char.length + s.mention.entity.label.length;
-          if (charCount + len >= cursorOffset && s.kind === "text") {
-            cursorSegIdx = i;
-            cursorInText = cursorOffset - charCount;
-            break;
-          }
-          charCount += len;
-        }
-
-        if (cursorSegIdx === -1) {
-          // Cursor is at the end — find last text segment
-          for (let i = currentSegments.length - 1; i >= 0; i--) {
-            if (currentSegments[i].kind === "text") {
-              cursorSegIdx = i;
-              cursorInText = (currentSegments[i] as { kind: "text"; text: string }).text.length;
-              break;
-            }
-          }
-        }
-
-        if (cursorSegIdx >= 0 && currentSegments[cursorSegIdx].kind === "text") {
-          const textSeg = currentSegments[cursorSegIdx] as {
-            kind: "text";
-            text: string;
-          };
-          const result = detectTrigger(
-            textSeg.text,
-            cursorInText,
-            config.triggers
-          );
           if (result) {
-            const entities =
-              config.entities[result.trigger.entityType] || [];
+            const entities = config.entities[result.trigger.entityType] || [];
             const filtered = filterEntities(entities, result.query);
             triggerInfoRef.current = {
-              segmentIndex: cursorSegIdx,
+              segmentIndex,
               triggerPos: result.triggerPos,
               cursorInText,
             };
-            setAutocomplete({
+            newAutocomplete = {
               active: true,
               trigger: result.trigger,
               query: result.query,
               results: filtered,
               highlightIndex: 0,
-            });
+            };
           } else {
             triggerInfoRef.current = null;
-            setAutocomplete(EMPTY_AUTOCOMPLETE);
           }
         } else {
           triggerInfoRef.current = null;
-          setAutocomplete(EMPTY_AUTOCOMPLETE);
         }
+      } else {
+        triggerInfoRef.current = null;
+      }
 
-        return currentSegments; // No mutation
-      });
+      // 3. Set both states (React batches these in the same event handler)
+      setSegments(newSegments);
+      setAutocomplete(newAutocomplete);
     },
     [config.triggers, config.entities]
   );
@@ -250,34 +244,27 @@ export function useMention(config: UseMentionConfig): UseMentionReturn {
         if (seg.kind !== "text") return prev;
 
         const text = seg.text;
-        // Text before trigger char
         const before = text.slice(0, triggerPos);
-        // Text after cursor (everything past the trigger+query)
         const after = text.slice(cursorInText);
 
         const newSegments: Segment[] = [];
 
-        // Copy segments before the current one
         for (let i = 0; i < segmentIndex; i++) {
           newSegments.push(prev[i]);
         }
 
-        // Text before trigger
         if (before) {
           newSegments.push({ kind: "text", text: before });
         }
 
-        // The mention
         newSegments.push({
           kind: "mention",
           mention: { entity, trigger },
         });
 
-        // Text after cursor (with a space if it doesn't start with one)
         const trailing = after.startsWith(" ") ? after : " " + after;
         newSegments.push({ kind: "text", text: trailing });
 
-        // Copy segments after the current one
         for (let i = segmentIndex + 1; i < prev.length; i++) {
           newSegments.push(prev[i]);
         }
@@ -348,7 +335,6 @@ export function useMention(config: UseMentionConfig): UseMentionReturn {
       const newSegments: Segment[] = [];
       for (let i = 0; i < prev.length; i++) {
         if (i === index) continue;
-        // Merge adjacent text segments
         const last = newSegments[newSegments.length - 1];
         const curr = prev[i];
         if (last?.kind === "text" && curr.kind === "text") {
