@@ -5,6 +5,7 @@ ALLOWED_MODELS = {
     "claude-opus-4-6",
     "claude-sonnet-4-5-20250929",
     "claude-haiku-4-5-20251001",
+    "openai:gpt-5.2",
     "ollama:sqlcoder",
     "ollama:duckdb-nsql",
 }
@@ -53,6 +54,7 @@ MODEL_PRICING: dict[str, tuple[float, float]] = {
     "claude-opus-4-6": (15.0, 75.0),
     "claude-sonnet-4-5-20250929": (3.0, 15.0),
     "claude-haiku-4-5-20251001": (1.0, 5.0),
+    "openai:gpt-5.2": (2.0, 8.0),
 }
 
 

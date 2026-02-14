@@ -11,7 +11,10 @@ from typing import Any
 
 import yaml
 
-from app.context.entity_resolver import resolve_locations, format_location_hints
+from app.context.entity_resolver import (
+    resolve_locations, format_location_hints,
+    resolve_products, format_product_hints,
+)
 
 # ---------------------------------------------------------------------------
 # Module state (loaded once at startup)
@@ -417,6 +420,10 @@ def assemble_context(question: str, force_raw: bool = False) -> str:
     location_matches = resolve_locations(question)
     location_hints_block = format_location_hints(location_matches)
 
+    # 1c. Entity resolution — resolve product aliases
+    product_matches = resolve_products(question)
+    product_hints_block = format_product_hints(product_matches)
+
     # 2. Smart analytics routing
     # Use analytics tables unless raw signals detected or force_raw
     use_analytics = (
@@ -454,6 +461,8 @@ def assemble_context(question: str, force_raw: bool = False) -> str:
     parts = [schema_block]
     if location_hints_block:
         parts.append(location_hints_block)
+    if product_hints_block:
+        parts.append(product_hints_block)
     parts.append(rules_block)
     if recipes_block:
         parts.append(recipes_block)

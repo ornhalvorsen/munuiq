@@ -1,6 +1,7 @@
 import time
 import uuid
 import anthropic
+import openai
 from fastapi import APIRouter, Depends, HTTPException, Request
 from app.models import AskRequest, AskResponse, ChartSpec, ALLOWED_MODELS, estimate_cost
 from app.llm_router import generate_sql, generate_insight, fix_sql
@@ -14,15 +15,16 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 
-def _friendly_api_error(exc: anthropic.APIStatusError) -> tuple[int, str]:
-    """Return (http_status, user-friendly message) for Anthropic API errors."""
+def _friendly_api_error(exc: anthropic.APIStatusError | openai.APIStatusError) -> tuple[int, str]:
+    """Return (http_status, user-friendly message) for API errors."""
     if exc.status_code == 529:
         return 503, "The AI model is temporarily overloaded. Please try again in a moment."
     if exc.status_code == 429:
         return 429, "AI rate limit reached. Please wait a moment and try again."
     if exc.status_code >= 500:
         return 503, "The AI service is temporarily unavailable. Please try again shortly."
-    return 500, f"AI service error: {exc.message}"
+    msg = getattr(exc, "message", str(exc))
+    return 500, f"AI service error: {msg}"
 
 MAX_SQL_RETRIES = 1
 
@@ -58,7 +60,12 @@ def ask(
                 detail="Ollama is not running. Start it with: ollama serve",
             )
 
-    provider = "ollama" if model.startswith("ollama:") else "claude"
+    if model.startswith("ollama:"):
+        provider = "ollama"
+    elif model.startswith("openai:"):
+        provider = "openai"
+    else:
+        provider = "claude"
 
     # Extract customer_ids from authenticated user (empty = no filter / superadmin)
     customer_ids = user.customer_ids if user else []
@@ -105,7 +112,7 @@ def ask(
     t0 = time.perf_counter()
     try:
         sql, sql_usage = generate_sql(question, model, customer_ids=customer_ids or None)
-    except anthropic.APIStatusError as e:
+    except (anthropic.APIStatusError, openai.APIStatusError) as e:
         status, msg = _friendly_api_error(e)
         raise HTTPException(status_code=status, detail=msg)
     except Exception as e:

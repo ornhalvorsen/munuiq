@@ -31,6 +31,7 @@ const MODELS = [
   { id: "claude-haiku-4-5-20251001", label: "Haiku" },
   { id: "claude-sonnet-4-5-20250929", label: "Sonnet" },
   { id: "claude-opus-4-6", label: "Opus" },
+  { id: "openai:gpt-5.2", label: "GPT-5.2" },
 ] as const;
 
 interface ChatEntry {
@@ -61,15 +62,13 @@ function CacheBadge({ tier }: { tier: string }) {
 }
 
 function ProviderBadge({ provider }: { provider: string }) {
-  const isOllama = provider === "ollama";
+  const colorMap: Record<string, string> = {
+    ollama: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border-0 text-[10px]",
+    openai: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400 border-0 text-[10px]",
+  };
+  const defaultColor = "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400 border-0 text-[10px]";
   return (
-    <Badge
-      className={
-        isOllama
-          ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border-0 text-[10px]"
-          : "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400 border-0 text-[10px]"
-      }
-    >
+    <Badge className={colorMap[provider] ?? defaultColor}>
       <Brain className="mr-0.5 h-2.5 w-2.5" />
       {provider}
     </Badge>

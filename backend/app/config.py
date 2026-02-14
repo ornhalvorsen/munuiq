@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     supabase_jwt_secret: str = ""
     supabase_url: str = ""
     supabase_service_role_key: str = ""
+    # OpenAI
+    openai_api_key: str = ""
     # Frontend URL for CORS (production)
     frontend_url: str = ""
 
