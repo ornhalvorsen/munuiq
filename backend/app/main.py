@@ -12,7 +12,7 @@ from app.schema import discover_schema, get_table_count, build_product_catalog, 
 from app.context import init_context, init_location_index, init_product_index
 from app.ollama_client import check_ollama_available, close_http_client
 from app import logging_db, management_db
-from app.routes import ask, dashboard, schema_route, feedback, interactions, auth_routes, admin_routes, onboarding_routes
+from app.routes import ask, dashboard, schema_route, feedback, interactions, auth_routes, admin_routes, onboarding_routes, lookups
 from app import query_cache
 from app.sales_view import create_sales_view
 
@@ -100,6 +100,7 @@ app.include_router(interactions.router)
 app.include_router(auth_routes.router)
 app.include_router(admin_routes.router)
 app.include_router(onboarding_routes.router)
+app.include_router(lookups.router)
 
 
 @app.get("/api/health")

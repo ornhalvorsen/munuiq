@@ -11,10 +11,17 @@ ALLOWED_MODELS = {
 }
 
 
+class MentionRef(BaseModel):
+    type: str      # "location" or "product"
+    id: str        # ruid or product_name
+    label: str     # display name
+
+
 class AskRequest(BaseModel):
     question: str
     model: str = "claude-sonnet-4-5-20250929"
     insight_model: Optional[str] = None  # Defaults to model if not set
+    mentions: list[MentionRef] = []  # Pre-resolved entities from mention UI
 
 
 class DashboardRequest(BaseModel):

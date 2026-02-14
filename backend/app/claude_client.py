@@ -65,10 +65,10 @@ def _usage(response) -> dict:
     return {"input_tokens": u.input_tokens, "output_tokens": u.output_tokens}
 
 
-def generate_sql(question: str, model: str, customer_ids: list[int] | None = None) -> tuple[str, dict]:
+def generate_sql(question: str, model: str, customer_ids: list[int] | None = None, mentions: list[dict] | None = None) -> tuple[str, dict]:
     """Generate a SQL query from a natural language question. Returns (sql, usage)."""
     client = get_client()
-    schema_ctx = assemble_context(question)
+    schema_ctx = assemble_context(question, mentions=mentions)
     hints = build_query_hints(question)
 
     # Build customer_id constraint for tenant-scoped queries

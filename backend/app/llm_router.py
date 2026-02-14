@@ -11,12 +11,12 @@ def _is_openai(model: str) -> bool:
     return model.startswith("openai:")
 
 
-def generate_sql(question: str, model: str, customer_ids: list[int] | None = None) -> tuple[str, dict]:
+def generate_sql(question: str, model: str, customer_ids: list[int] | None = None, mentions: list[dict] | None = None) -> tuple[str, dict]:
     if _is_ollama(model):
         return ollama_client.generate_sql(question, model, customer_ids=customer_ids)
     if _is_openai(model):
-        return openai_client.generate_sql(question, model, customer_ids=customer_ids)
-    return claude_client.generate_sql(question, model, customer_ids=customer_ids)
+        return openai_client.generate_sql(question, model, customer_ids=customer_ids, mentions=mentions)
+    return claude_client.generate_sql(question, model, customer_ids=customer_ids, mentions=mentions)
 
 
 def fix_sql(question: str, sql: str, error: str, model: str) -> tuple[str, dict]:

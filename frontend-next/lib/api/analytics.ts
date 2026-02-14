@@ -45,7 +45,8 @@ export interface DashboardResponse {
 export async function askQuestion(
   question: string,
   model: string = "claude-sonnet-4-5-20250929",
-  insightModel?: string
+  insightModel?: string,
+  mentions?: Array<{ type: string; id: string; label: string }>
 ): Promise<AskResponse> {
   return fetchJSON<AskResponse>("/ask", {
     method: "POST",
@@ -53,6 +54,7 @@ export async function askQuestion(
       question,
       model,
       insight_model: insightModel ?? undefined,
+      ...(mentions && mentions.length > 0 ? { mentions } : {}),
     }),
   });
 }

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/providers/auth-provider";
 import {
   MessageSquare,
+  MessageSquarePlus,
   LayoutDashboard,
   Rocket,
   Users,
@@ -26,6 +27,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: "Chat", href: "/chat", icon: MessageSquare },
+  { label: "Chat v2", href: "/chat-v2", icon: MessageSquarePlus },
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Onboarding", href: "/onboarding", icon: Rocket, roles: ["admin", "superadmin"] },
   { label: "Users", href: "/admin/users", icon: Users, roles: ["admin", "superadmin"] },

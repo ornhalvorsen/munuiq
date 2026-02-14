@@ -401,12 +401,14 @@ def _match_patterns(question: str) -> str:
     return "\n".join(lines)
 
 
-def assemble_context(question: str, force_raw: bool = False) -> str:
+def assemble_context(question: str, force_raw: bool = False, mentions: list[dict] | None = None) -> str:
     """Build the per-question LLM context from CTXE artifacts.
 
     Args:
         question: The user's natural language question.
         force_raw: If True, skip analytics routing (for SQL retry fallback).
+        mentions: Pre-resolved entities from mention UI [{type, id, label}, ...].
+                  When provided, these bypass fuzzy resolution for the given entity types.
 
     Returns a string to inject into the system prompt.
     """
@@ -417,11 +419,47 @@ def assemble_context(question: str, force_raw: bool = False) -> str:
     domains = _detect_domains(question)
 
     # 1b. Entity resolution — resolve location aliases
-    location_matches = resolve_locations(question)
+    # If mentions include locations, use those instead of fuzzy-resolving
+    mention_location_ids = {m["id"] for m in (mentions or []) if m.get("type") == "location"}
+    if mention_location_ids:
+        from app.context.entity_resolver import _location_index, LocationMatch
+        location_matches = []
+        for ruid in mention_location_ids:
+            loc = _location_index.get_entity(ruid)
+            if loc:
+                location_matches.append(LocationMatch(
+                    revenue_unit_id=ruid,
+                    db_name=loc["db_name"],
+                    display_name=loc["display_name"],
+                    customer_id=loc["customer_id"],
+                    brand=loc["brand"],
+                    status=loc["status"],
+                    merged_into_ruid=loc["merged_into_ruid"],
+                    alias_matched=loc["display_name"],
+                ))
+        # Ensure locations domain is active when mentions reference locations
+        domains.add("locations")
+    else:
+        location_matches = resolve_locations(question)
     location_hints_block = format_location_hints(location_matches)
 
     # 1c. Entity resolution — resolve product aliases
-    product_matches = resolve_products(question)
+    mention_product_ids = {m["id"] for m in (mentions or []) if m.get("type") == "product"}
+    if mention_product_ids:
+        from app.context.entity_resolver import _product_index, ProductMatch
+        product_matches = []
+        for pid in mention_product_ids:
+            prod = _product_index.get_entity(pid)
+            if prod:
+                product_matches.append(ProductMatch(
+                    product_name=prod["product_name"],
+                    description=prod["description"],
+                    category=prod.get("category"),
+                    alias_matched=prod["product_name"],
+                ))
+        domains.add("products")
+    else:
+        product_matches = resolve_products(question)
     product_hints_block = format_product_hints(product_matches)
 
     # 2. Smart analytics routing

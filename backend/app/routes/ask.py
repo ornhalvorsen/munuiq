@@ -111,7 +111,8 @@ def ask(
     # --- Tier 3: Full Pipeline ---
     t0 = time.perf_counter()
     try:
-        sql, sql_usage = generate_sql(question, model, customer_ids=customer_ids or None)
+        mentions = [m.model_dump() for m in request_body.mentions] if request_body.mentions else None
+        sql, sql_usage = generate_sql(question, model, customer_ids=customer_ids or None, mentions=mentions)
     except (anthropic.APIStatusError, openai.APIStatusError) as e:
         status, msg = _friendly_api_error(e)
         raise HTTPException(status_code=status, detail=msg)
