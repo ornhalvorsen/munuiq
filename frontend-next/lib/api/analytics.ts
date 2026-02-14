@@ -68,10 +68,15 @@ export async function getDashboard(
 
 export async function submitFeedback(
   interactionId: string,
-  feedback: "up" | "down"
+  feedback: "up" | "down",
+  comment?: string
 ): Promise<void> {
   await fetchJSON("/feedback", {
     method: "POST",
-    body: JSON.stringify({ interaction_id: interactionId, feedback }),
+    body: JSON.stringify({
+      interaction_id: interactionId,
+      feedback,
+      ...(comment ? { comment } : {}),
+    }),
   });
 }

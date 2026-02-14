@@ -24,6 +24,7 @@ import {
   Database,
   Brain,
   Coins,
+  X,
 } from "lucide-react";
 
 const MODELS = [
@@ -35,6 +36,7 @@ const MODELS = [
 interface ChatEntry {
   response: AskResponse;
   feedbackGiven: "up" | "down" | null;
+  feedbackPending: boolean;
   sqlExpanded: boolean;
 }
 
@@ -137,6 +139,59 @@ function TimingBadge({ response }: { response: AskResponse }) {
   );
 }
 
+function NegativeFeedbackForm({
+  onSubmit,
+  onCancel,
+}: {
+  onSubmit: (comment: string) => void;
+  onCancel: () => void;
+}) {
+  const [comment, setComment] = useState("");
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+      <p className="text-xs font-medium text-muted-foreground">
+        What was wrong with this answer?
+      </p>
+      <textarea
+        autoFocus
+        rows={2}
+        placeholder="e.g. Wrong numbers, missing data, misunderstood question..."
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            onSubmit(comment);
+          }
+          if (e.key === "Escape") onCancel();
+        }}
+        className="w-full rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+      />
+      <div className="flex items-center gap-2 justify-end">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs"
+          onClick={onCancel}
+        >
+          <X className="mr-1 h-3 w-3" />
+          Cancel
+        </Button>
+        <Button
+          variant="destructive"
+          size="sm"
+          className="h-7 text-xs"
+          onClick={() => onSubmit(comment)}
+        >
+          <ThumbsDown className="mr-1 h-3 w-3" />
+          Submit
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function ChatInterface() {
   const [question, setQuestion] = useState("");
   const [sqlModel, setSqlModel] = useState("claude-sonnet-4-5-20250929");
@@ -155,7 +210,7 @@ export function ChatInterface() {
     try {
       const resp = await askQuestion(question.trim(), sqlModel, insightModel);
       setHistory((prev) => [
-        { response: resp, feedbackGiven: null, sqlExpanded: false },
+        { response: resp, feedbackGiven: null, feedbackPending: false, sqlExpanded: false },
         ...prev,
       ]);
       setQuestion("");
@@ -170,6 +225,16 @@ export function ChatInterface() {
     const entry = history[index];
     if (!entry.response.interaction_id || entry.feedbackGiven) return;
 
+    if (feedback === "down") {
+      // Show comment input instead of submitting immediately
+      setHistory((prev) =>
+        prev.map((e, i) =>
+          i === index ? { ...e, feedbackPending: true } : e
+        )
+      );
+      return;
+    }
+
     try {
       await submitFeedback(entry.response.interaction_id, feedback);
       setHistory((prev) =>
@@ -180,6 +245,30 @@ export function ChatInterface() {
     } catch {
       // Ignore feedback errors
     }
+  }
+
+  async function handleSubmitNegativeFeedback(index: number, comment: string) {
+    const entry = history[index];
+    if (!entry.response.interaction_id) return;
+
+    try {
+      await submitFeedback(entry.response.interaction_id, "down", comment || undefined);
+      setHistory((prev) =>
+        prev.map((e, i) =>
+          i === index ? { ...e, feedbackGiven: "down", feedbackPending: false } : e
+        )
+      );
+    } catch {
+      // Ignore feedback errors
+    }
+  }
+
+  function cancelNegativeFeedback(index: number) {
+    setHistory((prev) =>
+      prev.map((e, i) =>
+        i === index ? { ...e, feedbackPending: false } : e
+      )
+    );
   }
 
   function toggleSql(index: number) {
@@ -287,7 +376,7 @@ export function ChatInterface() {
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7"
-                        disabled={!!entry.feedbackGiven}
+                        disabled={!!entry.feedbackGiven || entry.feedbackPending}
                         onClick={() => handleFeedback(idx, "up")}
                         style={{
                           opacity:
@@ -318,6 +407,13 @@ export function ChatInterface() {
                     </div>
                   )}
                 </div>
+
+                {entry.feedbackPending && (
+                  <NegativeFeedbackForm
+                    onSubmit={(comment) => handleSubmitNegativeFeedback(idx, comment)}
+                    onCancel={() => cancelNegativeFeedback(idx)}
+                  />
+                )}
 
                 {entry.sqlExpanded && (
                   <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs font-mono">

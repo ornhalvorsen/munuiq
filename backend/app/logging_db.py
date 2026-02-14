@@ -69,7 +69,7 @@ def connect():
             pass
         _conn.execute(_CREATE_SQL_FIXES_TABLE)
         # Add columns if upgrading from older schema
-        for col, dtype in [("matched_products", "VARCHAR"), ("time_period", "VARCHAR")]:
+        for col, dtype in [("matched_products", "VARCHAR"), ("time_period", "VARCHAR"), ("feedback_comment", "VARCHAR")]:
             try:
                 _conn.execute(f"ALTER TABLE interactions ADD COLUMN {col} {dtype}")
             except Exception:
@@ -138,15 +138,15 @@ def log_interaction(
         print(f"Logging DB: failed to log interaction — {e}")
 
 
-def update_feedback(interaction_id: str, feedback: str) -> bool:
-    """Set feedback ('up'/'down') on an interaction. Returns True on success."""
+def update_feedback(interaction_id: str, feedback: str, comment: str | None = None) -> bool:
+    """Set feedback ('up'/'down') and optional comment on an interaction. Returns True on success."""
     if _conn is None:
         return False
     try:
         with _lock:
             result = _conn.execute(
-                "UPDATE interactions SET feedback = ? WHERE interaction_id = ?",
-                [feedback, interaction_id],
+                "UPDATE interactions SET feedback = ?, feedback_comment = ? WHERE interaction_id = ?",
+                [feedback, comment, interaction_id],
             )
             return result.fetchone() is not None or True
     except Exception as e:
