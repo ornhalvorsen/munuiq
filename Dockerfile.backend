@@ -1,0 +1,20 @@
+FROM python:3.11.0-slim
+
+WORKDIR /app
+
+# Install dependencies first (cached layer)
+COPY backend/requirements.txt backend/requirements.txt
+RUN pip install --no-cache-dir -r backend/requirements.txt
+
+# Copy application code
+COPY backend/app/ backend/app/
+
+# Copy CTXE YAML artifacts (assembler.py walks up parents to find CTXE/)
+COPY CTXE/*.yaml CTXE/
+COPY CTXE/*.json CTXE/
+
+# Render injects PORT env var (default 10000)
+ENV PORT=10000
+
+WORKDIR /app/backend
+CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT

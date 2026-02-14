@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: analyticsiq-backend
+    runtime: docker
+    region: frankfurt
+    plan: starter
+    dockerfilePath: ./Dockerfile.backend
+    healthCheckPath: /api/health
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: MOTHERDUCK_TOKEN
+        sync: false
+      - key: MOTHERDUCK_LOGGING_TOKEN
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+
+  - type: web
+    name: analyticsiq-frontend
+    runtime: docker
+    region: frankfurt
+    plan: starter
+    dockerfilePath: ./Dockerfile.frontend
+    healthCheckPath: /
+    envVars:
+      - key: BACKEND_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
