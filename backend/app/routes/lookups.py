@@ -3,10 +3,7 @@
 from fastapi import APIRouter, Depends
 from app.auth.dependencies import get_current_user
 from app.auth.models import UserInfo
-from app.context.entity_resolver import (
-    _location_index,
-    _product_index,
-)
+from app.context import entity_resolver
 
 router = APIRouter()
 
@@ -17,10 +14,13 @@ def get_lookups(user: UserInfo = Depends(get_current_user)):
 
     Data is served from in-memory indexes (loaded at startup) — no DB queries.
     Locations are filtered by customer_ids (tenant scoping). Superadmins see all.
+
+    NOTE: We access _location_index / _product_index via the module (not import)
+    because init_*_index() replaces these at startup after import time.
     """
     # --- Locations ---
     locations = []
-    all_locs = _location_index.get_all_entities()
+    all_locs = entity_resolver._location_index.get_all_entities()
     for ruid, loc in all_locs.items():
         # Skip closed/inactive locations
         status = loc.get("status", "active")
@@ -46,7 +46,7 @@ def get_lookups(user: UserInfo = Depends(get_current_user)):
 
     # --- Products ---
     products = []
-    all_prods = _product_index.get_all_entities()
+    all_prods = entity_resolver._product_index.get_all_entities()
     for entity_id, prod in all_prods.items():
         products.append({
             "id": entity_id,

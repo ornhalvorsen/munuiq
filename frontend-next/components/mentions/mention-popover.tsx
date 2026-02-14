@@ -9,6 +9,8 @@ interface MentionPopoverProps {
   autocomplete: AutocompleteState;
   onSelect: (entity: MentionEntity) => void;
   onDismiss: () => void;
+  /** Ref to the input element — popover anchors above/below it */
+  anchorRef: React.RefObject<HTMLElement | null>;
 }
 
 function boldMatch(text: string, query: string): React.ReactNode {
@@ -28,37 +30,28 @@ export function MentionPopover({
   autocomplete,
   onSelect,
   onDismiss,
+  anchorRef,
 }: MentionPopoverProps) {
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [pos, setPos] = useState<{ bottom: number; left: number; width: number } | null>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Map<number, HTMLElement>>(new Map());
 
-  // Position the popover at the caret
+  // Position the popover anchored to the input element
   useEffect(() => {
-    if (!autocomplete.active) {
+    if (!autocomplete.active || !anchorRef.current) {
       setPos(null);
       return;
     }
 
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0) {
-      setPos(null);
-      return;
-    }
+    const rect = anchorRef.current.getBoundingClientRect();
 
-    const range = sel.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
-
-    // Position above caret by default, below if no space above
-    const popoverHeight = 300; // max estimated height
-    const spaceAbove = rect.top;
-    const placeAbove = spaceAbove > popoverHeight;
-
+    // Place above the input
     setPos({
-      top: placeAbove ? rect.top - 4 : rect.bottom + 4,
+      bottom: window.innerHeight - rect.top + 4,
       left: rect.left,
+      width: rect.width,
     });
-  }, [autocomplete.active, autocomplete.query, autocomplete.results]);
+  }, [autocomplete.active, autocomplete.query, autocomplete.results, anchorRef]);
 
   // Scroll highlighted item into view
   useEffect(() => {
@@ -87,16 +80,14 @@ export function MentionPopover({
 
   if (!autocomplete.active || !pos) return null;
 
-  const isAbove = pos.top < 200; // rough heuristic
-
   const content = (
     <div
       ref={popoverRef}
-      className="fixed z-50 w-72 rounded-md border bg-popover text-popover-foreground shadow-md animate-in fade-in-0 slide-in-from-bottom-2 duration-100"
+      className="fixed z-50 rounded-md border bg-popover text-popover-foreground shadow-md animate-in fade-in-0 slide-in-from-bottom-2 duration-100"
       style={{
-        top: isAbove ? pos.top : undefined,
-        bottom: isAbove ? undefined : `${window.innerHeight - pos.top}px`,
-        left: Math.min(pos.left, window.innerWidth - 300),
+        bottom: pos.bottom,
+        left: pos.left,
+        width: Math.min(pos.width, 320),
       }}
     >
       {/* Header */}
@@ -136,9 +127,6 @@ export function MentionPopover({
                 onMouseDown={(e) => {
                   e.preventDefault(); // Don't blur the input
                   onSelect(entity);
-                }}
-                onMouseEnter={() => {
-                  // Could update highlight on hover if desired
                 }}
               >
                 <div className="font-medium">

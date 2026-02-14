@@ -365,6 +365,7 @@ export function ChatInterfaceV2() {
           autocomplete={mention.autocomplete}
           onSelect={mention.selectMention}
           onDismiss={mention.dismissAutocomplete}
+          anchorRef={inputRef}
         />
         <Button
           onClick={handleAsk}
