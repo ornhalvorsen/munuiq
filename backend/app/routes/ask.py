@@ -1,5 +1,6 @@
 import time
 import uuid
+import anthropic
 from fastapi import APIRouter, Depends, HTTPException, Request
 from app.models import AskRequest, AskResponse, ChartSpec, ALLOWED_MODELS, estimate_cost
 from app.llm_router import generate_sql, generate_insight, fix_sql
@@ -11,6 +12,17 @@ from app import logging_db, query_cache
 from app.question_parser import parse_question
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+
+
+def _friendly_api_error(exc: anthropic.APIStatusError) -> tuple[int, str]:
+    """Return (http_status, user-friendly message) for Anthropic API errors."""
+    if exc.status_code == 529:
+        return 503, "The AI model is temporarily overloaded. Please try again in a moment."
+    if exc.status_code == 429:
+        return 429, "AI rate limit reached. Please wait a moment and try again."
+    if exc.status_code >= 500:
+        return 503, "The AI service is temporarily unavailable. Please try again shortly."
+    return 500, f"AI service error: {exc.message}"
 
 MAX_SQL_RETRIES = 1
 
@@ -93,6 +105,9 @@ def ask(
     t0 = time.perf_counter()
     try:
         sql, sql_usage = generate_sql(question, model, customer_ids=customer_ids or None)
+    except anthropic.APIStatusError as e:
+        status, msg = _friendly_api_error(e)
+        raise HTTPException(status_code=status, detail=msg)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate SQL: {e}")
     sql_time_ms = int((time.perf_counter() - t0) * 1000)
