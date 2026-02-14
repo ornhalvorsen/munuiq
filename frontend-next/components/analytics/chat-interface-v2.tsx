@@ -209,7 +209,7 @@ export function ChatInterfaceV2() {
   const [entities, setEntities] = useState<Record<string, MentionEntity[]>>({});
 
   const mention = useMention({ triggers: TRIGGERS, entities });
-  const inputRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Load lookups on mount
   useEffect(() => {
@@ -360,6 +360,7 @@ export function ChatInterfaceV2() {
           disabled={loading}
           placeholder="Ask a question about the restaurant data..."
           onSubmit={handleAsk}
+          className="flex-1"
         />
         <MentionPopover
           autocomplete={mention.autocomplete}

@@ -1,15 +1,7 @@
 "use client";
 
-import {
-  useRef,
-  useCallback,
-  useLayoutEffect,
-  useEffect,
-  useImperativeHandle,
-  forwardRef,
-} from "react";
+import { useRef, useCallback, useEffect, forwardRef } from "react";
 import { cn } from "@/lib/utils";
-import { MentionBadge } from "./mention-badge";
 import type { Segment } from "./types";
 
 interface MentionInputProps {
@@ -23,49 +15,19 @@ interface MentionInputProps {
 }
 
 /**
- * Get character offset of current selection within the contentEditable div.
+ * Plain text representation of segments (what the user sees in the textarea).
  */
-function getCharOffset(root: HTMLElement): number {
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) return -1;
-
-  const range = sel.getRangeAt(0);
-  const preRange = document.createRange();
-  preRange.selectNodeContents(root);
-  preRange.setEnd(range.startContainer, range.startOffset);
-  return preRange.toString().length;
+function segmentsToText(segments: Segment[]): string {
+  return segments
+    .map((s) =>
+      s.kind === "text"
+        ? s.text
+        : s.mention.trigger.char + s.mention.entity.label
+    )
+    .join("");
 }
 
-/**
- * Set cursor to a specific character offset within the contentEditable div.
- */
-function setCharOffset(root: HTMLElement, offset: number): void {
-  const sel = window.getSelection();
-  if (!sel) return;
-
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let remaining = offset;
-  let node: Text | null = null;
-
-  while (walker.nextNode()) {
-    const textNode = walker.currentNode as Text;
-    if (remaining <= textNode.length) {
-      node = textNode;
-      break;
-    }
-    remaining -= textNode.length;
-  }
-
-  if (node) {
-    const range = document.createRange();
-    range.setStart(node, remaining);
-    range.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(range);
-  }
-}
-
-export const MentionInput = forwardRef<HTMLDivElement, MentionInputProps>(
+export const MentionInput = forwardRef<HTMLTextAreaElement, MentionInputProps>(
   function MentionInput(
     {
       segments,
@@ -78,60 +40,50 @@ export const MentionInput = forwardRef<HTMLDivElement, MentionInputProps>(
     },
     ref
   ) {
-    const divRef = useRef<HTMLDivElement>(null);
-    const cursorRef = useRef<number>(-1);
-    const isComposingRef = useRef(false);
-    const suppressInputRef = useRef(false);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    // Track whether WE are updating the textarea (to avoid loops)
+    const suppressRef = useRef(false);
 
-    useImperativeHandle(ref, () => divRef.current!);
-
-    // Save cursor before React re-render
-    const saveCursor = useCallback(() => {
-      if (divRef.current) {
-        cursorRef.current = getCharOffset(divRef.current);
+    // Expose ref to parent (for popover anchoring)
+    useEffect(() => {
+      if (typeof ref === "function") {
+        ref(textareaRef.current);
+      } else if (ref) {
+        (ref as React.MutableRefObject<HTMLTextAreaElement | null>).current =
+          textareaRef.current;
       }
-    }, []);
+    }, [ref]);
 
-    // Restore cursor after render
-    useLayoutEffect(() => {
-      if (cursorRef.current >= 0 && divRef.current && !suppressInputRef.current) {
-        requestAnimationFrame(() => {
-          if (divRef.current && cursorRef.current >= 0) {
-            setCharOffset(divRef.current, cursorRef.current);
-          }
-        });
+    // Sync segments → textarea value (only when segments change externally,
+    // e.g. after mention insertion or clear)
+    useEffect(() => {
+      if (!textareaRef.current || suppressRef.current) {
+        suppressRef.current = false;
+        return;
       }
-      suppressInputRef.current = false;
+      const text = segmentsToText(segments);
+      if (textareaRef.current.value !== text) {
+        textareaRef.current.value = text;
+        // Place cursor at end
+        textareaRef.current.selectionStart = text.length;
+        textareaRef.current.selectionEnd = text.length;
+        textareaRef.current.focus();
+      }
     }, [segments]);
 
-    // Handle input events from contentEditable
-    const handleInput = useCallback(() => {
-      if (isComposingRef.current) return;
-      if (!divRef.current) return;
-
-      // Extract plain text and cursor offset from DOM
-      const plainText = divRef.current.innerText || "";
-      const offset = getCharOffset(divRef.current);
-
-      // Save cursor for restore after React re-render
-      cursorRef.current = offset;
-
-      onInput(plainText, offset);
-    }, [onInput]);
-
-    // Handle paste — strip HTML
-    const handlePaste = useCallback(
-      (e: React.ClipboardEvent) => {
-        e.preventDefault();
-        const text = e.clipboardData.getData("text/plain");
-        document.execCommand("insertText", false, text);
+    const handleChange = useCallback(
+      (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const text = e.target.value;
+        const cursor = e.target.selectionStart ?? text.length;
+        // Mark that we're driving this change so the sync effect doesn't fight us
+        suppressRef.current = true;
+        onInput(text, cursor);
       },
-      []
+      [onInput]
     );
 
-    // Handle keydown — delegate to hook first
     const handleKeyDown = useCallback(
-      (e: React.KeyboardEvent) => {
+      (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         // Delegate to parent handler (autocomplete navigation)
         onKeyDown(e);
         if (e.defaultPrevented) return;
@@ -145,93 +97,40 @@ export const MentionInput = forwardRef<HTMLDivElement, MentionInputProps>(
       [onKeyDown, onSubmit]
     );
 
-    // Render segments to DOM
-    // We sync manually instead of using React children because contentEditable
-    // and React don't play well together — React reconciliation can fight
-    // with the browser's text editing.
-    useEffect(() => {
-      if (!divRef.current) return;
-
-      saveCursor();
-
-      const div = divRef.current;
-      // Clear existing children
-      div.innerHTML = "";
-
-      for (let i = 0; i < segments.length; i++) {
-        const seg = segments[i];
-        if (seg.kind === "text") {
-          const span = document.createElement("span");
-          span.setAttribute("data-segment", "text");
-          span.textContent = seg.text;
-          div.appendChild(span);
-        } else {
-          // Mention badge — create inline non-editable span
-          const badge = document.createElement("span");
-          badge.setAttribute("data-segment", "mention");
-          badge.setAttribute("data-mention-index", String(i));
-          badge.contentEditable = "false";
-
-          const colorMap: Record<string, string> = {
-            blue: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-            amber:
-              "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
-          };
-          const color =
-            colorMap[seg.mention.trigger.color] ?? colorMap.blue;
-
-          badge.className = `inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ${color} mx-0.5 select-none`;
-          badge.textContent = `${seg.mention.trigger.char}\u00A0${seg.mention.entity.label}`;
-          div.appendChild(badge);
-        }
+    // Auto-resize textarea to content
+    const handleAutoResize = useCallback(() => {
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+        textareaRef.current.style.height =
+          Math.min(textareaRef.current.scrollHeight, 120) + "px";
       }
+    }, []);
 
-      // Restore cursor
-      if (cursorRef.current >= 0) {
-        requestAnimationFrame(() => {
-          if (divRef.current) {
-            setCharOffset(divRef.current, cursorRef.current);
-          }
-        });
-      }
-    }, [segments, saveCursor]);
-
-    // Focus the input on mount
+    // Focus on mount
     useEffect(() => {
-      if (divRef.current && !disabled) {
-        divRef.current.focus();
+      if (textareaRef.current && !disabled) {
+        textareaRef.current.focus();
       }
     }, [disabled]);
 
     return (
-      <div className="relative flex-1">
-        <div
-          ref={divRef}
-          contentEditable={!disabled}
-          suppressContentEditableWarning
-          onInput={handleInput}
-          onPaste={handlePaste}
-          onKeyDown={handleKeyDown}
-          onCompositionStart={() => {
-            isComposingRef.current = true;
-          }}
-          onCompositionEnd={() => {
-            isComposingRef.current = false;
-            handleInput();
-          }}
-          role="textbox"
-          aria-placeholder={placeholder}
-          aria-disabled={disabled}
-          data-placeholder={placeholder}
-          className={cn(
-            "placeholder:text-muted-foreground dark:bg-input/30 border-input min-h-[36px] w-full min-w-0 rounded-md border bg-transparent px-3 py-1.5 text-base shadow-xs transition-[color,box-shadow] outline-none md:text-sm",
-            "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
-            "empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground empty:before:pointer-events-none",
-            disabled && "pointer-events-none cursor-not-allowed opacity-50",
-            className
-          )}
-        />
-      </div>
+      <textarea
+        ref={textareaRef}
+        rows={1}
+        disabled={disabled}
+        placeholder={placeholder}
+        onChange={(e) => {
+          handleChange(e);
+          handleAutoResize();
+        }}
+        onKeyDown={handleKeyDown}
+        className={cn(
+          "placeholder:text-muted-foreground dark:bg-input/30 border-input min-h-[36px] w-full min-w-0 rounded-md border bg-transparent px-3 py-1.5 text-base shadow-xs transition-[color,box-shadow] outline-none resize-none md:text-sm",
+          "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+          disabled && "pointer-events-none cursor-not-allowed opacity-50",
+          className
+        )}
+      />
     );
   }
 );
