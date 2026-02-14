@@ -484,3 +484,179 @@ cumulative_revenue_by_store:
            SUM(revenue) OVER (PARTITION BY store ORDER BY order_date) AS cumulative_revenue
     FROM daily_rev
     ORDER BY store, order_date
+
+
+# ===========================================================================
+# ANALYTICS PATTERNS — pre-computed cubes
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# 11. LOCATION TREND (using analytics layer)
+# ---------------------------------------------------------------------------
+# Trigger: "how is X doing", "trending", "performing"
+
+analytics_location_trend:
+  question: "How is Madla doing?"
+  domains: [analytics]
+  triggers:
+    - location performance overview
+    - how is a store doing/trending
+    - quick location health check
+  notes: |
+    - Uses location_trailing_metrics snapshot table — no date filter needed
+    - Includes revenue, orders, ticket, labor metrics, WoW/MoM deltas
+    - revenue_percentile_28d shows where this store ranks in the fleet
+  sql: |
+    SELECT location_name,
+           ROUND(t28_avg_daily_revenue) AS avg_daily_revenue_28d,
+           ROUND(t28_avg_daily_orders) AS avg_daily_orders_28d,
+           ROUND(t28_avg_ticket) AS avg_ticket_28d,
+           ROUND(t28_labor_cost_pct, 1) AS labor_cost_pct_28d,
+           ROUND(wow_revenue_delta) AS wow_revenue_change,
+           ROUND(revenue_percentile_28d * 100, 0) AS fleet_percentile
+    FROM analytics.location_trailing_metrics
+    WHERE location_name ILIKE '%Madla%'
+
+
+# ---------------------------------------------------------------------------
+# 12. MIX VS FLEET
+# ---------------------------------------------------------------------------
+# Trigger: "mix vs fleet", "product share compared to fleet"
+
+analytics_mix_vs_fleet:
+  question: "How does Madla's coffee share compare to the fleet?"
+  domains: [analytics]
+  triggers:
+    - product mix vs fleet average
+    - category share compared to fleet
+    - over-indexed / under-indexed
+  notes: |
+    - Uses location_group_mix_trailing — 28-day rolling share vs fleet avg
+    - share_vs_fleet_delta > 0 means location sells more of this category than fleet avg
+    - group_set = 'category' for top-level, 'subcategory' for detail
+  sql: |
+    SELECT group_value AS category,
+           ROUND(t28_avg_revenue_share, 1) AS location_share_pct,
+           ROUND(fleet_avg_revenue_share, 1) AS fleet_share_pct,
+           ROUND(share_vs_fleet_delta, 1) AS vs_fleet
+    FROM analytics.location_group_mix_trailing gmt
+    JOIN analytics.location_trailing_metrics ltm
+      ON gmt.customer_id = ltm.customer_id AND gmt.revenue_unit_id = ltm.revenue_unit_id
+    WHERE ltm.location_name ILIKE '%Madla%'
+      AND gmt.group_set = 'category'
+    ORDER BY t28_avg_revenue_share DESC
+
+
+# ---------------------------------------------------------------------------
+# 13. FLEET RANKING
+# ---------------------------------------------------------------------------
+# Trigger: "best stores", "worst performing", "top stores", "ranking"
+
+analytics_fleet_ranking:
+  question: "Which are our best and worst performing stores?"
+  domains: [analytics]
+  triggers:
+    - best/worst stores
+    - top/bottom performing locations
+    - store ranking
+  notes: |
+    - Uses location_trailing_metrics with fleet_benchmarks for context
+    - revenue_percentile_28d is pre-computed (0-1 scale)
+    - For labor efficiency ranking, use location_labor_efficiency_trailing instead
+  sql: |
+    SELECT location_name,
+           ROUND(t28_avg_daily_revenue) AS avg_daily_revenue,
+           ROUND(t28_avg_daily_orders) AS avg_orders,
+           ROUND(t28_avg_ticket) AS avg_ticket,
+           ROUND(revenue_percentile_28d * 100, 0) AS percentile
+    FROM analytics.location_trailing_metrics
+    ORDER BY t28_avg_daily_revenue DESC
+
+
+# ---------------------------------------------------------------------------
+# 14. LABOR EFFICIENCY
+# ---------------------------------------------------------------------------
+# Trigger: "labor efficiency", "most efficient store", "labor cost by store"
+
+analytics_labor_efficiency:
+  question: "Which store has the best labor efficiency?"
+  domains: [analytics]
+  triggers:
+    - labor efficiency comparison
+    - revenue per labor hour by store
+    - labor cost percentage ranking
+  notes: |
+    - Uses location_labor_efficiency_trailing for pre-computed 28d metrics
+    - efficiency_vs_fleet_delta > 0 = more efficient than fleet avg
+    - t28_overtime_pct shows overtime burden
+  sql: |
+    SELECT ltm.location_name,
+           ROUND(le.t28_revenue_per_labor_hour) AS rev_per_hour,
+           ROUND(le.t28_labor_cost_pct, 1) AS labor_cost_pct,
+           ROUND(le.t28_overtime_pct, 1) AS overtime_pct,
+           ROUND(le.efficiency_vs_fleet_delta) AS vs_fleet
+    FROM analytics.location_labor_efficiency_trailing le
+    JOIN analytics.location_trailing_metrics ltm
+      ON le.customer_id = ltm.customer_id AND le.revenue_unit_id = ltm.revenue_unit_id
+    ORDER BY le.t28_revenue_per_labor_hour DESC
+
+
+# ---------------------------------------------------------------------------
+# 15. STAFFING ANALYSIS
+# ---------------------------------------------------------------------------
+# Trigger: "overstaffed", "understaffed", "staffing levels"
+
+analytics_staffing:
+  question: "Are we overstaffed on Tuesday mornings at Madla?"
+  domains: [analytics]
+  triggers:
+    - staffing level analysis
+    - overstaffed / understaffed detection
+    - recommended headcount
+  notes: |
+    - Uses hourly_staffing_benchmarks (trailing 8 weeks avg)
+    - staff_delta > 0 = understaffed, < 0 = overstaffed
+    - day_of_week: 0=Sun, 1=Mon, ..., 6=Sat
+  sql: |
+    SELECT hsb.hour,
+           ROUND(hsb.avg_transactions, 1) AS avg_transactions,
+           ROUND(hsb.avg_staff_present, 1) AS avg_staff,
+           hsb.recommended_staff,
+           hsb.staff_delta
+    FROM analytics.hourly_staffing_benchmarks hsb
+    JOIN analytics.location_trailing_metrics ltm
+      ON hsb.customer_id = ltm.customer_id AND hsb.revenue_unit_id = ltm.revenue_unit_id
+    WHERE ltm.location_name ILIKE '%Madla%'
+      AND hsb.day_of_week = 2  -- Tuesday
+      AND hsb.hour BETWEEN 6 AND 12  -- morning hours
+    ORDER BY hsb.hour
+
+
+# ---------------------------------------------------------------------------
+# 16. SICK LEAVE (if data available)
+# ---------------------------------------------------------------------------
+# Trigger: "sick leave", "sykefravær", "egenmelding", "absence rate"
+
+analytics_sick_leave:
+  question: "What's our sick leave rate?"
+  domains: [analytics]
+  triggers:
+    - sick leave rates
+    - absence analysis
+    - sykefravær / egenmelding
+  notes: |
+    - Uses location_sick_leave_trailing if data is available
+    - Falls back to noting data may not be populated
+    - Norwegian sick leave: egenmelding (self-cert), sykemelding (doctor-cert)
+    - National average is ~6-7%
+  sql: |
+    SELECT ltm.location_name,
+           ROUND(slt.trailing_28d_sick_rate_pct, 1) AS sick_rate_28d,
+           ROUND(slt.trailing_365d_sick_rate_pct, 1) AS sick_rate_annual,
+           ROUND(slt.egenmelding_rate_pct_28d, 1) AS egenmelding_rate,
+           ROUND(slt.employer_borne_cost_28d) AS employer_cost_28d,
+           ROUND(slt.sick_rate_vs_fleet_delta, 1) AS vs_fleet
+    FROM analytics.location_sick_leave_trailing slt
+    JOIN analytics.location_trailing_metrics ltm
+      ON slt.customer_id = ltm.customer_id AND slt.revenue_unit_id = ltm.revenue_unit_id
+    ORDER BY slt.trailing_28d_sick_rate_pct DESC

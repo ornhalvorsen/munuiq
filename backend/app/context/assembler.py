@@ -26,6 +26,16 @@ _loaded = False
 # Domain detection regexes
 # ---------------------------------------------------------------------------
 _DOMAIN_RES: list[tuple[str, re.Pattern]] = [
+    # Analytics domain — checked first for priority routing
+    ("analytics", re.compile(
+        r"\b(trend(?:ing|s)?|trailing|rolling|benchmark|fleet\s+avg|"
+        r"how(?:'s|s)?\s+\w+\s+(?:doing|performing|trending)|"
+        r"mix.{0,10}(?:vs|versus|fleet)|overall|summary|overview|kpi|"
+        r"daypart|week[\s-]*over[\s-]*week|growth\s+rate|best.{0,5}(?:store|worst)|worst.{0,5}store|"
+        r"labor\s+cost|efficiency|staffing|overstaffed|understaffed|"
+        r"sick\s+leave|sykefrav[æe]r|egenmelding|absence\s+rate)\b",
+        re.IGNORECASE,
+    )),
     ("sales", re.compile(
         r"\b(revenue|omsetning|inntekt|turnover|sale[s]?|salg|sol[gd]t|sell|sold|order[s]?|bestill|net_amount|order_total|average\s+ticket|avg\s+ticket|payment|betaling|vipps|kort|cash|kontant)\b",
         re.IGNORECASE,
@@ -55,6 +65,23 @@ _DOMAIN_RES: list[tuple[str, re.Pattern]] = [
         re.IGNORECASE,
     )),
 ]
+
+# Raw-signal detection — prevents analytics routing when present
+_RAW_SIGNALS = re.compile(
+    r"\b(specific\s+order|receipt|transaction\s+at\s+\d|individual\s+(?:order|item)|"
+    r"who\s+(?:sold|served)|order\s+number|basket.{0,10}bought\s+together|"
+    r"payment\s+type|vipps|kort|kontant|"
+    r"specific\s+employee|individual\s+shift)\b",
+    re.IGNORECASE,
+)
+
+# Tables to suppress when analytics domain is active (analytics replaces raw)
+_ANALYTICS_SUPPRESSES = {
+    "analytics": {
+        "munu.orders", "munu.order_lines",  # suppressed by daily_location_sales
+        "planday.punchclock_shifts",         # suppressed by daily_location_labor
+    },
+}
 
 # Pattern trigger regexes — map question keywords to pattern keys
 _PATTERN_TRIGGERS: list[tuple[re.Pattern, str]] = []
@@ -104,6 +131,31 @@ def _build_pattern_triggers():
         ),
         "cumulative_revenue_by_store": re.compile(
             r"\b(cumulative|running\s+total|ytd|year\s+to\s+date|accumulated|akkumulert)\b",
+            re.IGNORECASE,
+        ),
+        # Analytics patterns
+        "analytics_location_trend": re.compile(
+            r"\b(how(?:'s|s)?\s+\w+\s+(?:doing|performing|trending)|location\s+trend|store\s+performance|butikk.{0,10}(?:g[åa]r|trend))\b",
+            re.IGNORECASE,
+        ),
+        "analytics_mix_vs_fleet": re.compile(
+            r"\b(mix\s+(?:vs|versus|compared|mot)\s+fleet|product\s+mix.{0,15}fleet|group\s+mix|category\s+share\s+vs)\b",
+            re.IGNORECASE,
+        ),
+        "analytics_fleet_ranking": re.compile(
+            r"\b(best.{0,5}(?:store|worst|performing)|worst.{0,5}(?:store|performing)|rank(?:ing)?\s+(?:store|location)|top.{0,5}(?:store|location)|bottom.{0,5}(?:store|location))\b",
+            re.IGNORECASE,
+        ),
+        "analytics_labor_efficiency": re.compile(
+            r"\b(labor\s+efficiency|labour\s+efficiency|most\s+efficient\s+store|labor\s+cost\s+(?:by|per)\s+(?:store|location)|overtime\s+(?:by|per)\s+(?:store|location))\b",
+            re.IGNORECASE,
+        ),
+        "analytics_staffing": re.compile(
+            r"\b(overstaffed|understaffed|staffing\s+(?:level|recommend|benchmark)|right\s+staff|too\s+many\s+staff|not\s+enough\s+staff)\b",
+            re.IGNORECASE,
+        ),
+        "analytics_sick_leave": re.compile(
+            r"\b(sick\s+leave|sykefrav[æe]r|egenmelding|sykemelding|absence\s+rate|frav[æe]rs?\s*(?:prosent|rate|%))\b",
             re.IGNORECASE,
         ),
     }
@@ -222,8 +274,22 @@ def _detect_domains(question: str) -> set[str]:
     return domains
 
 
-def _select_tables(domains: set[str]) -> dict[str, dict]:
-    """Filter tables by detected domains, skip excluded/empty."""
+def _has_raw_signals(question: str) -> bool:
+    """Check if question needs raw transaction-level data."""
+    return bool(_RAW_SIGNALS.search(question))
+
+
+def _select_tables(domains: set[str], use_analytics: bool = True) -> dict[str, dict]:
+    """Filter tables by detected domains, skip excluded/empty.
+
+    When use_analytics=True and analytics domain is detected,
+    suppress raw equivalents that analytics tables replace.
+    """
+    # Determine which raw tables to suppress
+    suppress = set()
+    if use_analytics and "analytics" in domains:
+        suppress = _ANALYTICS_SUPPRESSES.get("analytics", set())
+
     selected = {}
     for name, meta in _tables.items():
         if meta.get("exclude_from_llm"):
@@ -232,6 +298,9 @@ def _select_tables(domains: set[str]) -> dict[str, dict]:
             continue
         table_domain = meta.get("domain", "")
         if table_domain in domains:
+            # Suppress raw tables when analytics is active
+            if name in suppress:
+                continue
             selected[name] = meta
     return selected
 
@@ -327,8 +396,12 @@ def _match_patterns(question: str) -> str:
     return "\n".join(lines)
 
 
-def assemble_context(question: str) -> str:
+def assemble_context(question: str, force_raw: bool = False) -> str:
     """Build the per-question LLM context from CTXE artifacts.
+
+    Args:
+        question: The user's natural language question.
+        force_raw: If True, skip analytics routing (for SQL retry fallback).
 
     Returns a string to inject into the system prompt.
     """
@@ -338,10 +411,18 @@ def assemble_context(question: str) -> str:
     # 1. Domain detection
     domains = _detect_domains(question)
 
-    # 2. Table selection
-    tables = _select_tables(domains)
+    # 2. Smart analytics routing
+    # Use analytics tables unless raw signals detected or force_raw
+    use_analytics = (
+        "analytics" in domains
+        and not force_raw
+        and not _has_raw_signals(question)
+    )
 
-    # 3. Schema block
+    # 3. Table selection
+    tables = _select_tables(domains, use_analytics=use_analytics)
+
+    # 4. Schema block
     schema_block = _render_schema_block(tables)
 
     # 4. Global rules (always included)

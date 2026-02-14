@@ -1,0 +1,1285 @@
+{
+  "generated_at": "2026-02-14T07:17:00.327149",
+  "status": "completed",
+  "shift_types": {
+    "shift_types": [
+      {
+        "id": 252103,
+        "name": "Ansvarlig",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 2543,
+        "earliest_shift": "2023-01-06 08:30:00",
+        "latest_shift": "2026-05-14 08:00:00"
+      },
+      {
+        "id": 547611,
+        "name": "Syk - Sykemelding NAV",
+        "pay_percentage": "0.00",
+        "portal_name": "stavanger",
+        "shift_count": 2442,
+        "earliest_shift": "2023-01-02 03:00:00",
+        "latest_shift": "2026-03-14 08:15:00"
+      },
+      {
+        "id": 9467,
+        "name": "Sykemelding  - NAV",
+        "pay_percentage": "0.00",
+        "portal_name": "oslo",
+        "shift_count": 1731,
+        "earliest_shift": "2023-01-17 09:00:00",
+        "latest_shift": "2026-04-03 07:00:00"
+      },
+      {
+        "id": 212491,
+        "name": "Sykemelding - arbeidsgiverperioden",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 1507,
+        "earliest_shift": "2023-01-03 11:30:00",
+        "latest_shift": "2026-02-18 09:00:00"
+      },
+      {
+        "id": 212493,
+        "name": "Syk - egenmelding",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 1183,
+        "earliest_shift": "2023-01-04 10:30:00",
+        "latest_shift": "2026-02-14 11:00:00"
+      },
+      {
+        "id": 265740,
+        "name": "Oppl\u00e6ring",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 1029,
+        "earliest_shift": "2023-01-10 09:00:00",
+        "latest_shift": "2026-03-24 10:00:00"
+      },
+      {
+        "id": 2884,
+        "name": "Sykemelding tom dag 16",
+        "pay_percentage": "1.00",
+        "portal_name": "oslo",
+        "shift_count": 979,
+        "earliest_shift": "2023-01-02 06:26:00",
+        "latest_shift": "2026-02-13 06:30:00"
+      },
+      {
+        "id": 549543,
+        "name": "Flexivakt",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 837,
+        "earliest_shift": "2023-01-02 07:00:00",
+        "latest_shift": "2026-05-09 12:00:00"
+      },
+      {
+        "id": 2883,
+        "name": "Sykdom - egenmelding",
+        "pay_percentage": "1.00",
+        "portal_name": "oslo",
+        "shift_count": 706,
+        "earliest_shift": "2023-01-03 10:30:00",
+        "latest_shift": "2026-02-07 12:00:00"
+      },
+      {
+        "id": 539131,
+        "name": "Ansvarsvakt ",
+        "pay_percentage": "1.00",
+        "portal_name": "oslo",
+        "shift_count": 600,
+        "earliest_shift": "2023-01-01 09:30:00",
+        "latest_shift": "2026-03-21 09:30:00"
+      },
+      {
+        "id": 549917,
+        "name": "L\u00e6rling",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 577,
+        "earliest_shift": "2023-01-02 02:55:00",
+        "latest_shift": "2025-11-22 09:00:00"
+      },
+      {
+        "id": 363045,
+        "name": "Stengt pga helligdag",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 561,
+        "earliest_shift": "2023-04-06 07:00:00",
+        "latest_shift": "2026-05-01 10:00:00"
+      },
+      {
+        "id": 194020,
+        "name": "Oppl\u00e6ring ",
+        "pay_percentage": "1.00",
+        "portal_name": "oslo",
+        "shift_count": 487,
+        "earliest_shift": "2023-01-14 08:36:00",
+        "latest_shift": "2026-02-12 10:15:00"
+      },
+      {
+        "id": 550173,
+        "name": "Praksis",
+        "pay_percentage": "0.00",
+        "portal_name": "stavanger",
+        "shift_count": 432,
+        "earliest_shift": "2023-01-06 09:30:00",
+        "latest_shift": "2026-04-29 09:00:00"
+      },
+      {
+        "id": 550604,
+        "name": "L\u00e6rling 2. \u00e5r",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 365,
+        "earliest_shift": "2023-09-01 02:55:00",
+        "latest_shift": "2025-08-28 03:00:00"
+      },
+      {
+        "id": 212495,
+        "name": "Permisjon med l\u00f8nn",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 360,
+        "earliest_shift": "2023-04-07 08:00:00",
+        "latest_shift": "2026-05-01 16:30:00"
+      },
+      {
+        "id": 550607,
+        "name": "Permisjon uten l\u00f8nn",
+        "pay_percentage": "0.00",
+        "portal_name": "stavanger",
+        "shift_count": 300,
+        "earliest_shift": "2024-03-04 06:00:00",
+        "latest_shift": "2026-04-10 14:00:00"
+      },
+      {
+        "id": 550478,
+        "name": "Sykdom",
+        "pay_percentage": "0.00",
+        "portal_name": "oslo",
+        "shift_count": 212,
+        "earliest_shift": "2023-01-28 09:30:00",
+        "latest_shift": "2025-11-30 10:00:00"
+      },
+      {
+        "id": 549748,
+        "name": "Omsorgsdager Barn",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 190,
+        "earliest_shift": "2023-01-09 09:40:00",
+        "latest_shift": "2026-01-23 07:30:00"
+      },
+      {
+        "id": 550608,
+        "name": "Svangerskap - NAV",
+        "pay_percentage": "0.00",
+        "portal_name": "stavanger",
+        "shift_count": 181,
+        "earliest_shift": "2024-04-22 15:05:00",
+        "latest_shift": "2025-10-31 08:30:00"
+      },
+      {
+        "id": 212492,
+        "name": "Syk - uten l\u00f8nn",
+        "pay_percentage": "0.00",
+        "portal_name": "stavanger",
+        "shift_count": 162,
+        "earliest_shift": "2023-01-30 11:30:00",
+        "latest_shift": "2026-01-06 03:00:00"
+      },
+      {
+        "id": 550673,
+        "name": "Stengt pga helligdag",
+        "pay_percentage": "1.00",
+        "portal_name": "oslo",
+        "shift_count": 155,
+        "earliest_shift": "2023-05-01 08:00:00",
+        "latest_shift": "2026-04-06 06:30:00"
+      },
+      {
+        "id": 2886,
+        "name": "Personalm\u00f8te",
+        "pay_percentage": "1.00",
+        "portal_name": "oslo",
+        "shift_count": 129,
+        "earliest_shift": "2023-01-30 21:00:00",
+        "latest_shift": "2026-02-03 19:30:00"
+      },
+      {
+        "id": 550599,
+        "name": "BERGEN",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 119,
+        "earliest_shift": "2023-01-09 07:55:00",
+        "latest_shift": "2025-12-08 06:00:00"
+      },
+      {
+        "id": 550602,
+        "name": "Avspassering",
+        "pay_percentage": "0.00",
+        "portal_name": "stavanger",
+        "shift_count": 113,
+        "earliest_shift": "2023-05-19 08:00:00",
+        "latest_shift": "2026-04-30 11:00:00"
+      },
+      {
+        "id": 550601,
+        "name": "OSLO",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 77,
+        "earliest_shift": "2023-01-23 03:00:00",
+        "latest_shift": "2025-11-13 04:00:00"
+      },
+      {
+        "id": 2885,
+        "name": "Egenmelding - barn ",
+        "pay_percentage": "1.00",
+        "portal_name": "oslo",
+        "shift_count": 73,
+        "earliest_shift": "2023-02-13 08:00:00",
+        "latest_shift": "2026-01-28 06:00:00"
+      },
+      {
+        "id": 158772,
+        "name": "Kontor / Admin ",
+        "pay_percentage": "1.00",
+        "portal_name": "oslo",
+        "shift_count": 72,
+        "earliest_shift": "2023-06-13 09:00:00",
+        "latest_shift": "2026-04-01 08:00:00"
+      },
+      {
+        "id": 550605,
+        "name": "Pleiepenger Nav",
+        "pay_percentage": "0.00",
+        "portal_name": "stavanger",
+        "shift_count": 63,
+        "earliest_shift": "2023-12-26 03:00:00",
+        "latest_shift": "2025-11-28 07:00:00"
+      },
+      {
+        "id": 550609,
+        "name": "Udokumentert frav\u00e6r",
+        "pay_percentage": "0.00",
+        "portal_name": "stavanger",
+        "shift_count": 60,
+        "earliest_shift": "2025-05-31 12:30:00",
+        "latest_shift": "2026-01-27 16:00:00"
+      },
+      {
+        "id": 550600,
+        "name": "Helligdagstillegg",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 38,
+        "earliest_shift": "2023-04-06 08:55:00",
+        "latest_shift": "2023-06-04 11:30:00"
+      },
+      {
+        "id": 550619,
+        "name": "Ferie",
+        "pay_percentage": "0.00",
+        "portal_name": "oslo",
+        "shift_count": 34,
+        "earliest_shift": "2023-07-31 07:00:00",
+        "latest_shift": "2024-04-12 06:00:00"
+      },
+      {
+        "id": 549828,
+        "name": "EIGANES",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 31,
+        "earliest_shift": "2023-02-01 08:30:00",
+        "latest_shift": "2025-06-09 08:05:00"
+      },
+      {
+        "id": 550512,
+        "name": "Barista oppl\u00e6ring - Magnus",
+        "pay_percentage": "1.00",
+        "portal_name": "oslo",
+        "shift_count": 26,
+        "earliest_shift": "2023-01-10 15:23:00",
+        "latest_shift": "2026-02-04 10:00:00"
+      },
+      {
+        "id": 550679,
+        "name": "Udokumentert frav\u00e6r",
+        "pay_percentage": "0.00",
+        "portal_name": "oslo",
+        "shift_count": 24,
+        "earliest_shift": "2025-07-02 07:30:00",
+        "latest_shift": "2026-02-14 08:30:00"
+      },
+      {
+        "id": 550606,
+        "name": "Omsorgspermisjon u/l\u00f8nn",
+        "pay_percentage": "0.00",
+        "portal_name": "stavanger",
+        "shift_count": 21,
+        "earliest_shift": "2023-12-01 03:00:00",
+        "latest_shift": "2025-02-21 13:40:00"
+      },
+      {
+        "id": 550678,
+        "name": "Avspasering",
+        "pay_percentage": "0.00",
+        "portal_name": "oslo",
+        "shift_count": 7,
+        "earliest_shift": "2025-06-27 06:00:00",
+        "latest_shift": "2025-12-19 06:30:00"
+      },
+      {
+        "id": 550674,
+        "name": "Stavanger",
+        "pay_percentage": "1.00",
+        "portal_name": "oslo",
+        "shift_count": 5,
+        "earliest_shift": "2023-11-12 23:00:00",
+        "latest_shift": "2023-11-16 21:30:00"
+      },
+      {
+        "id": 550603,
+        "name": "1 mai & 17mai tillegg",
+        "pay_percentage": "0.50",
+        "portal_name": "stavanger",
+        "shift_count": 1,
+        "earliest_shift": "2023-05-01 11:55:00",
+        "latest_shift": "2023-05-01 11:55:00"
+      },
+      {
+        "id": 212494,
+        "name": "Ferie",
+        "pay_percentage": "0.00",
+        "portal_name": "stavanger",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 455377,
+        "name": "Oppl\u00e6ring Erlend",
+        "pay_percentage": "0.00",
+        "portal_name": "oslo",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 303314,
+        "name": "Oppl\u00e6ring",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 550676,
+        "name": "Regionsleder",
+        "pay_percentage": "1.00",
+        "portal_name": "oslo",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 550610,
+        "name": "Event",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 252110,
+        "name": "Ansvarlig + kaffe",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 2887,
+        "name": "Kaffekurs",
+        "pay_percentage": "0.00",
+        "portal_name": "oslo",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 453642,
+        "name": "Oppl\u00e6ring Erik",
+        "pay_percentage": "0.00",
+        "portal_name": "oslo",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 18891,
+        "name": "Avspasering ",
+        "pay_percentage": "0.00",
+        "portal_name": "oslo",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 550672,
+        "name": "Butikkmedarbeider",
+        "pay_percentage": "1.00",
+        "portal_name": "oslo",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 549676,
+        "name": "Permittert",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 549065,
+        "name": "Flex pluss",
+        "pay_percentage": "0.00",
+        "portal_name": "stavanger",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 2888,
+        "name": "Ferie ",
+        "pay_percentage": "0.00",
+        "portal_name": "oslo",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 549986,
+        "name": "Permittert Arbeidsgiverperiode, l\u00f8nnet ",
+        "pay_percentage": "1.00",
+        "portal_name": "oslo",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 549465,
+        "name": "Fri",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 525452,
+        "name": "Anette",
+        "pay_percentage": "0.00",
+        "portal_name": "oslo",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 548417,
+        "name": "Helligdager",
+        "pay_percentage": "1.00",
+        "portal_name": "oslo",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 549608,
+        "name": "Permittert NAV",
+        "pay_percentage": "0.00",
+        "portal_name": "oslo",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 550675,
+        "name": "L\u00e6rling 1. \u00e5r",
+        "pay_percentage": "1.00",
+        "portal_name": "oslo",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 212490,
+        "name": "M\u00f8te",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 550677,
+        "name": "Stengt pga helligdag",
+        "pay_percentage": "1.00",
+        "portal_name": "oslo",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 252102,
+        "name": "Syk - Coronarelatert Sykemelding",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 442444,
+        "name": "50 % Sykemeldt",
+        "pay_percentage": "1.00",
+        "portal_name": "oslo",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 550210,
+        "name": "Syk - Coronarelatert Egenmelding",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 549049,
+        "name": "Solvakt",
+        "pay_percentage": "1.00",
+        "portal_name": "oslo",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 510077,
+        "name": "Rydd",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 549192,
+        "name": "Kj\u00f8kkenvakt Sandwich Bar",
+        "pay_percentage": "1.00",
+        "portal_name": "oslo",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 259194,
+        "name": "Sykemelding 50 %",
+        "pay_percentage": "1.00",
+        "portal_name": "oslo",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 429153,
+        "name": "Syk - Sykemelding",
+        "pay_percentage": "1.00",
+        "portal_name": "stavanger",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      },
+      {
+        "id": 549066,
+        "name": "Flex minus",
+        "pay_percentage": "0.00",
+        "portal_name": "stavanger",
+        "shift_count": 0,
+        "earliest_shift": "None",
+        "latest_shift": "None"
+      }
+    ],
+    "absence_mapping": {
+      "547611": {
+        "name": "Syk - Sykemelding NAV",
+        "category": "sykemelding",
+        "portal_name": "stavanger",
+        "shift_count": 2442
+      },
+      "9467": {
+        "name": "Sykemelding  - NAV",
+        "category": "sykemelding",
+        "portal_name": "oslo",
+        "shift_count": 1731
+      },
+      "212491": {
+        "name": "Sykemelding - arbeidsgiverperioden",
+        "category": "sykemelding",
+        "portal_name": "stavanger",
+        "shift_count": 1507
+      },
+      "212493": {
+        "name": "Syk - egenmelding",
+        "category": "egenmelding",
+        "portal_name": "stavanger",
+        "shift_count": 1183
+      },
+      "2884": {
+        "name": "Sykemelding tom dag 16",
+        "category": "sykemelding",
+        "portal_name": "oslo",
+        "shift_count": 979
+      },
+      "2883": {
+        "name": "Sykdom - egenmelding",
+        "category": "egenmelding",
+        "portal_name": "oslo",
+        "shift_count": 706
+      },
+      "212495": {
+        "name": "Permisjon med l\u00f8nn",
+        "category": "vacation",
+        "portal_name": "stavanger",
+        "shift_count": 360
+      },
+      "550607": {
+        "name": "Permisjon uten l\u00f8nn",
+        "category": "vacation",
+        "portal_name": "stavanger",
+        "shift_count": 300
+      },
+      "550478": {
+        "name": "Sykdom",
+        "category": "other_absence",
+        "portal_name": "oslo",
+        "shift_count": 212
+      },
+      "549748": {
+        "name": "Omsorgsdager Barn",
+        "category": "child_sick",
+        "portal_name": "stavanger",
+        "shift_count": 190
+      },
+      "212492": {
+        "name": "Syk - uten l\u00f8nn",
+        "category": "other_absence",
+        "portal_name": "stavanger",
+        "shift_count": 162
+      },
+      "2885": {
+        "name": "Egenmelding - barn ",
+        "category": "egenmelding",
+        "portal_name": "oslo",
+        "shift_count": 73
+      },
+      "550609": {
+        "name": "Udokumentert frav\u00e6r",
+        "category": "other_absence",
+        "portal_name": "stavanger",
+        "shift_count": 60
+      },
+      "550619": {
+        "name": "Ferie",
+        "category": "vacation",
+        "portal_name": "oslo",
+        "shift_count": 34
+      },
+      "550679": {
+        "name": "Udokumentert frav\u00e6r",
+        "category": "other_absence",
+        "portal_name": "oslo",
+        "shift_count": 24
+      },
+      "550606": {
+        "name": "Omsorgspermisjon u/l\u00f8nn",
+        "category": "vacation",
+        "portal_name": "stavanger",
+        "shift_count": 21
+      },
+      "212494": {
+        "name": "Ferie",
+        "category": "vacation",
+        "portal_name": "stavanger",
+        "shift_count": 0
+      },
+      "549676": {
+        "name": "Permittert",
+        "category": "other_absence",
+        "portal_name": "stavanger",
+        "shift_count": 0
+      },
+      "2888": {
+        "name": "Ferie ",
+        "category": "vacation",
+        "portal_name": "oslo",
+        "shift_count": 0
+      },
+      "549986": {
+        "name": "Permittert Arbeidsgiverperiode, l\u00f8nnet ",
+        "category": "other_absence",
+        "portal_name": "oslo",
+        "shift_count": 0
+      },
+      "549465": {
+        "name": "Fri",
+        "category": "vacation",
+        "portal_name": "stavanger",
+        "shift_count": 0
+      },
+      "549608": {
+        "name": "Permittert NAV",
+        "category": "other_absence",
+        "portal_name": "oslo",
+        "shift_count": 0
+      },
+      "252102": {
+        "name": "Syk - Coronarelatert Sykemelding",
+        "category": "sykemelding",
+        "portal_name": "stavanger",
+        "shift_count": 0
+      },
+      "442444": {
+        "name": "50 % Sykemeldt",
+        "category": "sykemelding",
+        "portal_name": "oslo",
+        "shift_count": 0
+      },
+      "550210": {
+        "name": "Syk - Coronarelatert Egenmelding",
+        "category": "egenmelding",
+        "portal_name": "stavanger",
+        "shift_count": 0
+      },
+      "259194": {
+        "name": "Sykemelding 50 %",
+        "category": "sykemelding",
+        "portal_name": "oslo",
+        "shift_count": 0
+      },
+      "429153": {
+        "name": "Syk - Sykemelding",
+        "category": "sykemelding",
+        "portal_name": "stavanger",
+        "shift_count": 0
+      }
+    },
+    "mapped_types": [
+      {
+        "shift_type_id": 547611,
+        "name": "Syk - Sykemelding NAV",
+        "category": "sykemelding",
+        "shift_count": 2442
+      },
+      {
+        "shift_type_id": 9467,
+        "name": "Sykemelding  - NAV",
+        "category": "sykemelding",
+        "shift_count": 1731
+      },
+      {
+        "shift_type_id": 212491,
+        "name": "Sykemelding - arbeidsgiverperioden",
+        "category": "sykemelding",
+        "shift_count": 1507
+      },
+      {
+        "shift_type_id": 212493,
+        "name": "Syk - egenmelding",
+        "category": "egenmelding",
+        "shift_count": 1183
+      },
+      {
+        "shift_type_id": 2884,
+        "name": "Sykemelding tom dag 16",
+        "category": "sykemelding",
+        "shift_count": 979
+      },
+      {
+        "shift_type_id": 2883,
+        "name": "Sykdom - egenmelding",
+        "category": "egenmelding",
+        "shift_count": 706
+      },
+      {
+        "shift_type_id": 212495,
+        "name": "Permisjon med l\u00f8nn",
+        "category": "vacation",
+        "shift_count": 360
+      },
+      {
+        "shift_type_id": 550607,
+        "name": "Permisjon uten l\u00f8nn",
+        "category": "vacation",
+        "shift_count": 300
+      },
+      {
+        "shift_type_id": 550478,
+        "name": "Sykdom",
+        "category": "other_absence",
+        "shift_count": 212
+      },
+      {
+        "shift_type_id": 549748,
+        "name": "Omsorgsdager Barn",
+        "category": "child_sick",
+        "shift_count": 190
+      },
+      {
+        "shift_type_id": 212492,
+        "name": "Syk - uten l\u00f8nn",
+        "category": "other_absence",
+        "shift_count": 162
+      },
+      {
+        "shift_type_id": 2885,
+        "name": "Egenmelding - barn ",
+        "category": "egenmelding",
+        "shift_count": 73
+      },
+      {
+        "shift_type_id": 550609,
+        "name": "Udokumentert frav\u00e6r",
+        "category": "other_absence",
+        "shift_count": 60
+      },
+      {
+        "shift_type_id": 550619,
+        "name": "Ferie",
+        "category": "vacation",
+        "shift_count": 34
+      },
+      {
+        "shift_type_id": 550679,
+        "name": "Udokumentert frav\u00e6r",
+        "category": "other_absence",
+        "shift_count": 24
+      },
+      {
+        "shift_type_id": 550606,
+        "name": "Omsorgspermisjon u/l\u00f8nn",
+        "category": "vacation",
+        "shift_count": 21
+      },
+      {
+        "shift_type_id": 212494,
+        "name": "Ferie",
+        "category": "vacation",
+        "shift_count": 0
+      },
+      {
+        "shift_type_id": 549676,
+        "name": "Permittert",
+        "category": "other_absence",
+        "shift_count": 0
+      },
+      {
+        "shift_type_id": 2888,
+        "name": "Ferie ",
+        "category": "vacation",
+        "shift_count": 0
+      },
+      {
+        "shift_type_id": 549986,
+        "name": "Permittert Arbeidsgiverperiode, l\u00f8nnet ",
+        "category": "other_absence",
+        "shift_count": 0
+      },
+      {
+        "shift_type_id": 549465,
+        "name": "Fri",
+        "category": "vacation",
+        "shift_count": 0
+      },
+      {
+        "shift_type_id": 549608,
+        "name": "Permittert NAV",
+        "category": "other_absence",
+        "shift_count": 0
+      },
+      {
+        "shift_type_id": 252102,
+        "name": "Syk - Coronarelatert Sykemelding",
+        "category": "sykemelding",
+        "shift_count": 0
+      },
+      {
+        "shift_type_id": 442444,
+        "name": "50 % Sykemeldt",
+        "category": "sykemelding",
+        "shift_count": 0
+      },
+      {
+        "shift_type_id": 550210,
+        "name": "Syk - Coronarelatert Egenmelding",
+        "category": "egenmelding",
+        "shift_count": 0
+      },
+      {
+        "shift_type_id": 259194,
+        "name": "Sykemelding 50 %",
+        "category": "sykemelding",
+        "shift_count": 0
+      },
+      {
+        "shift_type_id": 429153,
+        "name": "Syk - Sykemelding",
+        "category": "sykemelding",
+        "shift_count": 0
+      }
+    ],
+    "has_absence_data": true
+  },
+  "absence_shifts": {
+    "absence_vs_punchclock": [
+      {
+        "shift_type": "Syk - Sykemelding NAV",
+        "total_shifts": 2699,
+        "clocked_shifts": 832,
+        "unclocked_shifts": 1867
+      },
+      {
+        "shift_type": "Sykemelding  - NAV",
+        "total_shifts": 1736,
+        "clocked_shifts": 239,
+        "unclocked_shifts": 1497
+      },
+      {
+        "shift_type": "Sykemelding - arbeidsgiverperioden",
+        "total_shifts": 1545,
+        "clocked_shifts": 196,
+        "unclocked_shifts": 1349
+      },
+      {
+        "shift_type": "Syk - egenmelding",
+        "total_shifts": 1183,
+        "clocked_shifts": 34,
+        "unclocked_shifts": 1149
+      },
+      {
+        "shift_type": "Sykemelding tom dag 16",
+        "total_shifts": 981,
+        "clocked_shifts": 55,
+        "unclocked_shifts": 926
+      },
+      {
+        "shift_type": "Sykdom - egenmelding",
+        "total_shifts": 706,
+        "clocked_shifts": 13,
+        "unclocked_shifts": 693
+      },
+      {
+        "shift_type": "Permisjon med l\u00f8nn",
+        "total_shifts": 482,
+        "clocked_shifts": 355,
+        "unclocked_shifts": 127
+      },
+      {
+        "shift_type": "Permisjon uten l\u00f8nn",
+        "total_shifts": 310,
+        "clocked_shifts": 90,
+        "unclocked_shifts": 220
+      },
+      {
+        "shift_type": "Sykdom",
+        "total_shifts": 212,
+        "clocked_shifts": 5,
+        "unclocked_shifts": 207
+      },
+      {
+        "shift_type": "Omsorgsdager Barn",
+        "total_shifts": 191,
+        "clocked_shifts": 11,
+        "unclocked_shifts": 180
+      },
+      {
+        "shift_type": "Syk - uten l\u00f8nn",
+        "total_shifts": 162,
+        "clocked_shifts": 1,
+        "unclocked_shifts": 161
+      },
+      {
+        "shift_type": "Udokumentert frav\u00e6r",
+        "total_shifts": 85,
+        "clocked_shifts": 3,
+        "unclocked_shifts": 82
+      },
+      {
+        "shift_type": "Egenmelding - barn ",
+        "total_shifts": 73,
+        "clocked_shifts": 3,
+        "unclocked_shifts": 70
+      },
+      {
+        "shift_type": "Ferie",
+        "total_shifts": 34,
+        "clocked_shifts": 0,
+        "unclocked_shifts": 34
+      },
+      {
+        "shift_type": "Omsorgspermisjon u/l\u00f8nn",
+        "total_shifts": 23,
+        "clocked_shifts": 6,
+        "unclocked_shifts": 17
+      }
+    ]
+  },
+  "employee_groups": {
+    "employee_groups": [
+      {
+        "id": 241602,
+        "name": "Gammel ikke i bruk Baker dag",
+        "portal_name": "oslo",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241290,
+        "name": "Ass. butikkleder",
+        "portal_name": "stavanger",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241294,
+        "name": "Produksjonsmedarbeider - F",
+        "portal_name": "stavanger",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241283,
+        "name": "Administrativ medarbeider",
+        "portal_name": "stavanger",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241284,
+        "name": "Ryddehjelp",
+        "portal_name": "stavanger",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241297,
+        "name": "Renhold S",
+        "portal_name": "stavanger",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241285,
+        "name": "Gammel ikke i bruk Barista",
+        "portal_name": "stavanger",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241610,
+        "name": "Regionsleder",
+        "portal_name": "oslo",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241478,
+        "name": "Administrativ medarbeider",
+        "portal_name": "oslo",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241605,
+        "name": "L\u00e6rling Baker",
+        "portal_name": "oslo",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241292,
+        "name": "Regionsleder",
+        "portal_name": "stavanger",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241597,
+        "name": "Baker",
+        "portal_name": "oslo",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 115159,
+        "name": "Butikkmedarbeider",
+        "portal_name": "stavanger",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241286,
+        "name": "Kaffebrenner",
+        "portal_name": "stavanger",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241282,
+        "name": "Renholder",
+        "portal_name": "stavanger",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241287,
+        "name": "Produksjonsleder",
+        "portal_name": "stavanger",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 240799,
+        "name": "L\u00e6rling Baker",
+        "portal_name": "stavanger",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 115157,
+        "name": "Baker",
+        "portal_name": "stavanger",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241598,
+        "name": "Sj\u00e5f\u00f8r",
+        "portal_name": "oslo",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 115158,
+        "name": "Konditor",
+        "portal_name": "stavanger",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 115152,
+        "name": "Butikkleder",
+        "portal_name": "stavanger",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241595,
+        "name": "Butikkmedarbeider",
+        "portal_name": "oslo",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241296,
+        "name": "Baker S",
+        "portal_name": "stavanger",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 240684,
+        "name": "Produksjonsmedarbeider - U",
+        "portal_name": "stavanger",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241293,
+        "name": "L\u00e6rling Konditor",
+        "portal_name": "stavanger",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241607,
+        "name": "Produksjonsmedarbeider",
+        "portal_name": "oslo",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241601,
+        "name": "Produksjonsleder",
+        "portal_name": "oslo",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241599,
+        "name": "Gammel ikke i bruk - Produksjonsmedarbeider",
+        "portal_name": "oslo",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 240424,
+        "name": "Sj\u00e5f\u00f8r/pakker",
+        "portal_name": "stavanger",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241295,
+        "name": "Produksjonsmedarbeider",
+        "portal_name": "stavanger",
+        "employee_count": 0,
+        "total_hours": 0.0
+      },
+      {
+        "id": 241604,
+        "name": "Butikkleder",
+        "portal_name": "oslo",
+        "employee_count": 0,
+        "total_hours": 0.0
+      }
+    ]
+  },
+  "pay_rate_coverage": {
+    "total_employee_group_combos": 782,
+    "with_pay_rate": 0,
+    "with_salary": 48,
+    "with_any_rate": 48,
+    "without_rate": 734
+  },
+  "summary": {
+    "has_absence_data": true,
+    "absence_types_found": 27,
+    "recommendation": "Absence data found \u2014 sick leave cubes can be populated."
+  }
+}

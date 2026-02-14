@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # Frontend URL for CORS (production)
     frontend_url: str = ""
 
-    model_config = {"env_file": Path(__file__).resolve().parent.parent / ".env"}
+    model_config = {"env_file": Path(__file__).resolve().parent.parent / ".env", "extra": "ignore"}
 
 
 settings = Settings()

@@ -11,7 +11,7 @@ import re
 
 # Tables that require customer_id filtering (schema.table patterns)
 _CUSTOMER_SCOPED_TABLES = {
-    "munu.", "admin.", "cakeiteasy.", "planday.", "reference.", "munuiq.",
+    "munu.", "admin.", "cakeiteasy.", "planday.", "reference.", "munuiq.", "analytics.",
 }
 
 
@@ -22,7 +22,7 @@ def build_customer_constraint(customer_ids: list[int]) -> str:
     ids_str = ", ".join(str(c) for c in customer_ids)
     return (
         f"\n\nCRITICAL: Every query MUST include WHERE customer_id IN ({ids_str}) "
-        f"on ALL tables from munu, munuiq, admin, cakeiteasy, planday, and reference schemas. "
+        f"on ALL tables from munu, munuiq, admin, cakeiteasy, planday, reference, and analytics schemas. "
         f"This is mandatory and must not be omitted."
     )
 

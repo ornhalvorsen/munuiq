@@ -79,7 +79,7 @@ munu.orders:
       description: "Total discount applied to the order."
     state:
       type: VARCHAR
-      description: "Order state (e.g. completed, voided)."
+      description: "Order state (e.g. committed, cancelled). Use state='committed' for valid orders."
     _loaded_at:
       type: TIMESTAMP
       description: "ETL load timestamp. Internal metadata."
@@ -1964,6 +1964,59 @@ join_recipes:
       WHERE ol.net_amount IS NOT NULL AND o.order_date BETWEEN ? AND ?
       GROUP BY o.order_date, w.temp_max, w.precipitation_mm
 
+  location_vs_fleet:
+    description: "Compare a location's trailing metrics to fleet benchmarks"
+    domains: [analytics]
+    sql: |
+      SELECT ltm.location_name, ltm.t28_avg_daily_revenue,
+        fb.fleet_avg, fb.fleet_median,
+        ltm.t28_avg_daily_revenue - fb.fleet_avg AS vs_fleet_avg
+      FROM analytics.location_trailing_metrics ltm
+      CROSS JOIN analytics.fleet_benchmarks fb
+      WHERE fb.metric_name = 'daily_revenue'
+        AND ltm.customer_id = fb.customer_id
+
+  group_mix_by_location:
+    description: "Product group mix % at a location vs fleet"
+    domains: [analytics]
+    sql: |
+      SELECT group_value, t28_avg_revenue_share, fleet_avg_revenue_share,
+        share_vs_fleet_delta
+      FROM analytics.location_group_mix_trailing
+      WHERE group_set = 'category'
+      ORDER BY t28_avg_revenue_share DESC
+
+  trailing_performance:
+    description: "Location trailing performance with fleet comparison"
+    domains: [analytics]
+    sql: |
+      SELECT location_name, t28_avg_daily_revenue, t28_avg_daily_orders,
+        t28_avg_ticket, wow_revenue_delta, revenue_percentile_28d
+      FROM analytics.location_trailing_metrics
+      ORDER BY t28_avg_daily_revenue DESC
+
+  labor_efficiency_comparison:
+    description: "Location labor efficiency vs fleet"
+    domains: [analytics]
+    sql: |
+      SELECT le.revenue_unit_id, ltm.location_name,
+        le.t28_revenue_per_labor_hour, le.t28_labor_cost_pct,
+        le.efficiency_vs_fleet_delta, le.labor_cost_pct_vs_fleet_delta
+      FROM analytics.location_labor_efficiency_trailing le
+      JOIN analytics.location_trailing_metrics ltm
+        ON le.customer_id = ltm.customer_id AND le.revenue_unit_id = ltm.revenue_unit_id
+      ORDER BY le.t28_revenue_per_labor_hour DESC
+
+  staffing_analysis:
+    description: "Hourly staffing benchmarks for a location/DOW"
+    domains: [analytics]
+    sql: |
+      SELECT hour, avg_transactions, avg_staff_present,
+        recommended_staff, staff_delta
+      FROM analytics.hourly_staffing_benchmarks
+      WHERE day_of_week = 1  -- Monday
+      ORDER BY hour
+
 
 # ============================================================================
 # GLOBAL GOTCHAS — Critical rules for ALL queries
@@ -2013,3 +2066,432 @@ global_rules:
 
   net_vs_gross: >
     Use net_amount (excl VAT) for revenue reporting. Avoid gross_amount.
+
+  analytics_preference: >
+    Prefer analytics.* tables for trends, benchmarks, mix comparisons, and labor/efficiency questions.
+    Use raw tables (munu.orders, planday.punchclock_shifts) only for transaction-level detail:
+    specific orders, receipts, basket contents, individual shifts, payment types.
+
+  analytics_no_refilter: >
+    Analytics tables already exclude bundles, inactive categories, and non-committed orders.
+    Do NOT re-apply bundle regex, category_is_active, or state='committed' filters on analytics tables.
+
+  norwegian_sick_leave: >
+    Norwegian sick leave reference: egenmelding (self-certified, 1-3 days, employer pays 100%).
+    Sykemelding (doctor-certified): day 1-16 employer period (100%), day 17+ NAV covers (up to 6G cap).
+    Child sick leave: day 1-10 employer, day 11+ NAV. National average ~6-7%.
+
+
+# ============================================================================
+# DOMAIN: ANALYTICS (pre-computed cubes)
+# Pre-aggregated daily and trailing metrics. Prefer over raw tables for trends.
+# ============================================================================
+
+analytics.daily_location_sales:
+  domain: analytics
+  description: >
+    Pre-aggregated daily sales by location. One row per store per day.
+    Already excludes bundles, non-committed orders. Use for trends, not transaction detail.
+  row_count: 50000
+  primary_key: [customer_id, revenue_unit_id, order_date]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    revenue_unit_id:
+      type: VARCHAR
+      description: "Store/location ID."
+    order_date:
+      type: DATE
+      description: "Business date."
+    location_name:
+      type: VARCHAR
+      description: "Denormalized store name."
+    net_revenue:
+      type: "DECIMAL(18,2)"
+      description: "Total net revenue for the day (excl VAT, bundles pre-filtered)."
+    order_count:
+      type: INTEGER
+      description: "Number of committed orders."
+    item_quantity:
+      type: "DECIMAL(18,4)"
+      description: "Total items sold."
+    avg_order_value:
+      type: "DECIMAL(18,2)"
+      description: "Average order value = net_revenue / order_count."
+    day_of_week:
+      type: INTEGER
+      description: "0=Sunday, 1=Monday, ..., 6=Saturday."
+    day_name:
+      type: VARCHAR
+      description: "Day name (Monday, Tuesday, etc.)."
+    week_number:
+      type: INTEGER
+      description: "ISO week number."
+    month_number:
+      type: INTEGER
+      description: "Month (1-12)."
+    year_number:
+      type: INTEGER
+      description: "Year."
+  gotchas:
+    - "Already pre-aggregated — do NOT join to order_lines."
+    - "Bundle filtering already applied — do NOT re-apply regex."
+    - "For transaction-level detail, use munu.orders + order_lines instead."
+
+analytics.daily_location_labor:
+  domain: analytics
+  description: >
+    Daily labor metrics per location: actual/scheduled hours, overtime, cost,
+    efficiency ratios. Joined with sales for labor_cost_pct and revenue_per_labor_hour.
+  row_count: 20000
+  primary_key: [customer_id, revenue_unit_id, order_date]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    revenue_unit_id:
+      type: VARCHAR
+      description: "Store/location ID."
+    order_date:
+      type: DATE
+      description: "Business date."
+    scheduled_hours:
+      type: "DECIMAL(10,2)"
+      description: "Total scheduled shift hours."
+    actual_hours_worked:
+      type: "DECIMAL(10,2)"
+      description: "Total approved punchclock hours."
+    overtime_hours:
+      type: "DECIMAL(10,2)"
+      description: "Hours above 7.5h per shift threshold."
+    headcount_scheduled:
+      type: INTEGER
+      description: "Distinct employees scheduled."
+    headcount_present:
+      type: INTEGER
+      description: "Distinct employees who clocked in."
+    total_labor_cost:
+      type: "DECIMAL(18,2)"
+      description: "Base + overtime cost in NOK."
+    labor_cost_pct:
+      type: "DECIMAL(10,2)"
+      description: "Labor cost as % of net revenue."
+    revenue_per_labor_hour:
+      type: "DECIMAL(18,2)"
+      description: "Net revenue / actual hours worked."
+    orders_per_labor_hour:
+      type: "DECIMAL(10,2)"
+      description: "Order count / actual hours worked."
+    schedule_adherence_pct:
+      type: "DECIMAL(10,2)"
+      description: "Actual hours / scheduled hours * 100."
+  gotchas:
+    - "Already joined through department_mapping bridge — do NOT re-join."
+    - "For individual shift details, use planday.punchclock_shifts instead."
+
+analytics.daily_location_labor_by_role:
+  domain: analytics
+  description: >
+    Daily labor metrics broken down by employee role (Baker, Butikkleder, etc.).
+  row_count: 40000
+  primary_key: [customer_id, revenue_unit_id, order_date, role_name]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    revenue_unit_id:
+      type: VARCHAR
+      description: "Store/location ID."
+    order_date:
+      type: DATE
+      description: "Business date."
+    role_name:
+      type: VARCHAR
+      description: "Employee group name (Baker, Butikkleder, Konditor, etc.)."
+    actual_hours_worked:
+      type: "DECIMAL(10,2)"
+      description: "Hours worked by this role."
+    overtime_hours:
+      type: "DECIMAL(10,2)"
+      description: "Overtime hours for this role."
+    headcount_present:
+      type: INTEGER
+      description: "Distinct employees in this role."
+    labor_cost:
+      type: "DECIMAL(18,2)"
+      description: "Total cost for this role."
+  gotchas:
+    - "Legacy groups (Gammel*) already excluded."
+
+analytics.daily_location_daypart:
+  domain: analytics
+  description: >
+    Daily sales by daypart (Morning/Lunch/Afternoon/Evening) per location.
+  row_count: 100000
+  primary_key: [customer_id, revenue_unit_id, order_date, daypart_name]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    revenue_unit_id:
+      type: VARCHAR
+      description: "Store/location ID."
+    order_date:
+      type: DATE
+      description: "Business date."
+    daypart_name:
+      type: VARCHAR
+      description: "Morning (06-11), Lunch (11-14), Afternoon (14-17), Evening (17-22)."
+    net_revenue:
+      type: "DECIMAL(18,2)"
+      description: "Revenue in this daypart."
+    order_count:
+      type: INTEGER
+      description: "Orders in this daypart."
+    revenue_share_pct:
+      type: "DECIMAL(10,2)"
+      description: "% of day's revenue in this daypart."
+
+analytics.daily_location_labor_hourly:
+  domain: analytics
+  description: >
+    Hourly staffing and transaction data per location per day.
+    Used for staffing analysis and hourly benchmarks.
+  row_count: 200000
+  primary_key: [customer_id, revenue_unit_id, order_date, hour]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    revenue_unit_id:
+      type: VARCHAR
+      description: "Store/location ID."
+    order_date:
+      type: DATE
+      description: "Business date."
+    hour:
+      type: INTEGER
+      description: "Hour of day (0-23)."
+    actual_staff:
+      type: INTEGER
+      description: "Distinct employees clocked in during this hour."
+    transactions_in_hour:
+      type: INTEGER
+      description: "Number of orders placed during this hour."
+    revenue_in_hour:
+      type: "DECIMAL(18,2)"
+      description: "Revenue from orders in this hour."
+    transactions_per_staff:
+      type: "DECIMAL(10,2)"
+      description: "Transactions / staff count."
+
+analytics.location_trailing_metrics:
+  domain: analytics
+  description: >
+    Snapshot: trailing 7d/28d/90d averages per location with WoW/MoM deltas.
+    Includes revenue, orders, ticket, labor efficiency. Best for "how is X doing?" questions.
+  row_count: 40
+  primary_key: [customer_id, revenue_unit_id]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    revenue_unit_id:
+      type: VARCHAR
+      description: "Store/location ID."
+    location_name:
+      type: VARCHAR
+      description: "Store name."
+    t7_avg_daily_revenue:
+      type: "DECIMAL(18,2)"
+      description: "7-day trailing avg daily revenue."
+    t28_avg_daily_revenue:
+      type: "DECIMAL(18,2)"
+      description: "28-day trailing avg daily revenue."
+    t28_avg_daily_orders:
+      type: "DECIMAL(10,2)"
+      description: "28-day trailing avg daily orders."
+    t28_avg_ticket:
+      type: "DECIMAL(18,2)"
+      description: "28-day trailing avg order value."
+    t28_labor_cost_pct:
+      type: "DECIMAL(10,2)"
+      description: "28-day trailing labor cost %."
+    t28_revenue_per_labor_hour:
+      type: "DECIMAL(18,2)"
+      description: "28-day trailing revenue per labor hour."
+    wow_revenue_delta:
+      type: "DECIMAL(18,2)"
+      description: "Week-over-week revenue change (avg daily)."
+    mom_revenue_delta:
+      type: "DECIMAL(18,2)"
+      description: "Month-over-month revenue change (avg daily)."
+    revenue_percentile_28d:
+      type: "DECIMAL(5,4)"
+      description: "Revenue percentile rank within fleet (0-1)."
+  gotchas:
+    - "Snapshot table — no date filtering needed, always shows current state."
+    - "Use for 'how is X doing?' and 'best/worst stores' questions."
+
+analytics.location_group_mix_trailing:
+  domain: analytics
+  description: >
+    28-day product group mix per location vs fleet average.
+    Shows which categories each store over/under-indexes on.
+  row_count: 500
+  primary_key: [customer_id, revenue_unit_id, group_set, group_value]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    revenue_unit_id:
+      type: VARCHAR
+      description: "Store/location ID."
+    group_set:
+      type: VARCHAR
+      description: "Grouping type: 'category' or 'subcategory'."
+    group_value:
+      type: VARCHAR
+      description: "Category/subcategory name."
+    t28_avg_revenue_share:
+      type: "DECIMAL(10,2)"
+      description: "This location's 28d avg revenue share %."
+    fleet_avg_revenue_share:
+      type: "DECIMAL(10,2)"
+      description: "Fleet-wide avg revenue share %."
+    share_vs_fleet_delta:
+      type: "DECIMAL(10,2)"
+      description: "Location share - fleet share (positive = over-indexed)."
+
+analytics.fleet_benchmarks:
+  domain: analytics
+  description: >
+    Fleet-wide benchmark statistics: avg, median, P25, P75, min, max
+    for key metrics. Use for "fleet average" and "how does X compare" questions.
+  row_count: 10
+  primary_key: [customer_id, metric_name]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    metric_name:
+      type: VARCHAR
+      description: "Metric: daily_revenue, daily_orders, avg_order_value, revenue_per_labor_hour, labor_cost_pct."
+    location_count:
+      type: INTEGER
+      description: "Number of locations included."
+    fleet_avg:
+      type: "DECIMAL(18,2)"
+      description: "Fleet average."
+    fleet_median:
+      type: "DECIMAL(18,2)"
+      description: "Fleet median."
+    fleet_p25:
+      type: "DECIMAL(18,2)"
+      description: "25th percentile."
+    fleet_p75:
+      type: "DECIMAL(18,2)"
+      description: "75th percentile."
+  gotchas:
+    - "Snapshot table — no date filtering needed."
+    - "Metrics are unpivoted: one row per metric_name per customer_id."
+
+analytics.location_labor_efficiency_trailing:
+  domain: analytics
+  description: >
+    Snapshot: 28-day labor efficiency metrics per location with fleet comparison.
+    Revenue per labor hour, labor cost %, overtime %, schedule adherence.
+  row_count: 40
+  primary_key: [customer_id, revenue_unit_id]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    revenue_unit_id:
+      type: VARCHAR
+      description: "Store/location ID."
+    t28_revenue_per_labor_hour:
+      type: "DECIMAL(18,2)"
+      description: "28d avg revenue per labor hour."
+    t28_labor_cost_pct:
+      type: "DECIMAL(10,2)"
+      description: "28d avg labor cost %."
+    t28_overtime_pct:
+      type: "DECIMAL(10,2)"
+      description: "Overtime hours as % of total hours."
+    t28_schedule_adherence_pct:
+      type: "DECIMAL(10,2)"
+      description: "Actual vs scheduled hours %."
+    fleet_avg_revenue_per_labor_hour:
+      type: "DECIMAL(18,2)"
+      description: "Fleet average for comparison."
+    efficiency_vs_fleet_delta:
+      type: "DECIMAL(18,2)"
+      description: "This location - fleet avg (positive = more efficient)."
+    fleet_avg_labor_cost_pct:
+      type: "DECIMAL(10,2)"
+      description: "Fleet avg labor cost %."
+    labor_cost_pct_vs_fleet_delta:
+      type: "DECIMAL(10,2)"
+      description: "This location - fleet avg (positive = higher cost)."
+
+analytics.hourly_staffing_benchmarks:
+  domain: analytics
+  description: >
+    Staffing benchmarks by day-of-week x hour per location.
+    Shows avg transactions, staff, and recommended headcount.
+  row_count: 5000
+  primary_key: [customer_id, revenue_unit_id, day_of_week, hour]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    revenue_unit_id:
+      type: VARCHAR
+      description: "Store/location ID."
+    day_of_week:
+      type: INTEGER
+      description: "0=Sunday through 6=Saturday."
+    hour:
+      type: INTEGER
+      description: "Hour of day (0-23)."
+    avg_transactions:
+      type: "DECIMAL(10,1)"
+      description: "Avg transactions for this DOW x hour (trailing 8 weeks)."
+    avg_staff_present:
+      type: "DECIMAL(10,1)"
+      description: "Avg staff count."
+    recommended_staff:
+      type: INTEGER
+      description: "Recommended headcount based on target transactions/staff."
+    staff_delta:
+      type: INTEGER
+      description: "Recommended - actual. Positive = understaffed."
+  gotchas:
+    - "Snapshot table — no date filtering needed."
+    - "staff_delta > 0 means understaffed, < 0 means overstaffed."
+
+analytics.daypart_benchmarks:
+  domain: analytics
+  description: >
+    Fleet benchmarks by daypart and metric. Shows how locations compare across
+    Morning/Lunch/Afternoon/Evening.
+  row_count: 20
+  primary_key: [customer_id, daypart_name, metric_name]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    daypart_name:
+      type: VARCHAR
+      description: "Morning, Lunch, Afternoon, Evening."
+    metric_name:
+      type: VARCHAR
+      description: "Metric: avg_revenue, avg_orders, revenue_share_pct."
+    fleet_avg:
+      type: "DECIMAL(18,2)"
+      description: "Fleet average."
+    fleet_median:
+      type: "DECIMAL(18,2)"
+      description: "Fleet median."
