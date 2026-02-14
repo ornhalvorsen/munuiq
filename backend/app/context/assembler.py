@@ -11,6 +11,8 @@ from typing import Any
 
 import yaml
 
+from app.context.entity_resolver import resolve_locations, format_location_hints
+
 # ---------------------------------------------------------------------------
 # Module state (loaded once at startup)
 # ---------------------------------------------------------------------------
@@ -411,6 +413,10 @@ def assemble_context(question: str, force_raw: bool = False) -> str:
     # 1. Domain detection
     domains = _detect_domains(question)
 
+    # 1b. Entity resolution — resolve location aliases
+    location_matches = resolve_locations(question)
+    location_hints_block = format_location_hints(location_matches)
+
     # 2. Smart analytics routing
     # Use analytics tables unless raw signals detected or force_raw
     use_analytics = (
@@ -425,7 +431,7 @@ def assemble_context(question: str, force_raw: bool = False) -> str:
     # 4. Schema block
     schema_block = _render_schema_block(tables)
 
-    # 4. Global rules (always included)
+    # 5. Global rules (always included)
     rules_block = _render_rules()
 
     # 5. Join recipes (matching domains)
@@ -445,7 +451,10 @@ def assemble_context(question: str, force_raw: bool = False) -> str:
     data_dict = get_data_dictionary()
 
     # Assemble
-    parts = [schema_block, rules_block]
+    parts = [schema_block]
+    if location_hints_block:
+        parts.append(location_hints_block)
+    parts.append(rules_block)
     if recipes_block:
         parts.append(recipes_block)
     parts.append(syntax_block)

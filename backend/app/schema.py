@@ -128,11 +128,44 @@ def precrunch_metadata() -> str:
             return []
 
     # --- Locations (revenue_units is the correct location table; orders.inid is empty) ---
-    rows = _safe_query("SELECT DISTINCT name FROM munu.revenue_units WHERE name IS NOT NULL ORDER BY name")
-    if rows:
-        names = [r[0] for r in rows]
-        set_location_names(names)
-        lines.append(f"Locations ({len(names)}): {', '.join(names)}")
+    # Use rich location data from entity_resolver if available
+    from app.context.entity_resolver import get_locations_by_ruid, get_location_data_for_parser
+    locations_by_ruid = get_locations_by_ruid()
+    if locations_by_ruid:
+        # Feed rich data to question parser
+        set_location_names(get_location_data_for_parser())
+
+        # Build structured location block grouped by region
+        regions: dict[str, list] = {}
+        for ruid, loc in locations_by_ruid.items():
+            if loc["status"] in ("inactive", "low_activity"):
+                continue
+            region = loc.get("region", "unknown")
+            cid = loc.get("customer_id")
+            region_key = f"{region.title()} (customer_id={cid})" if cid else region.title()
+            regions.setdefault(region_key, []).append(loc)
+
+        lines.append("LOCATIONS:")
+        for region_key, locs in regions.items():
+            lines.append(f"  {region_key}:")
+            for loc in locs:
+                parts_l = [f"ruid {loc['ruid']}"]
+                if loc["display_name"] != loc["db_name"]:
+                    parts_l.append(f"display: {loc['display_name']}")
+                if loc.get("planday_dept") and loc["planday_dept"].lower() not in loc["db_name"].lower():
+                    parts_l.append(f"planday: {loc['planday_dept']}")
+                if loc["status"] != "active":
+                    parts_l.append(f"status: {loc['status']}")
+                    if loc.get("merged_into_ruid"):
+                        parts_l.append(f"merged into ruid {loc['merged_into_ruid']}")
+                lines.append(f"    {loc['db_name']} ({', '.join(parts_l)})")
+    else:
+        # Fallback: flat list from DB
+        rows = _safe_query("SELECT DISTINCT name FROM munu.revenue_units WHERE name IS NOT NULL ORDER BY name")
+        if rows:
+            names = [r[0] for r in rows]
+            set_location_names(names)
+            lines.append(f"Locations ({len(names)}): {', '.join(names)}")
 
     # --- Date range ---
     rows = _safe_query("SELECT MIN(order_date), MAX(order_date), COUNT(*) FROM munu.orders")

@@ -8,7 +8,8 @@ stems and regex for time period detection.
 import re
 
 _product_stems: set[str] = set()
-_location_names: list[str] = []  # Full location names from munu.installations
+_location_names: list[str] = []       # Full location names from munu.revenue_units
+_location_data: list[dict] = []       # Rich data: {name, display_name, ruid, customer_id, aliases}
 
 # Minimum stem length to avoid false positives (e.g. "is", "og")
 _MIN_STEM_LEN = 4
@@ -21,11 +22,23 @@ def set_product_stems(stems: list[str]) -> None:
     print(f"Question parser: loaded {len(_product_stems)} product stems")
 
 
-def set_location_names(names: list[str]) -> None:
-    """Called at startup with location names from munu.installations."""
-    global _location_names
-    _location_names = [n for n in names if n and len(n) > 2]
-    print(f"Question parser: loaded {len(_location_names)} location names")
+def set_location_names(names: list) -> None:
+    """Called at startup with location data.
+
+    Accepts either:
+    - list[str]: legacy flat names from DB
+    - list[dict]: rich data with {name, display_name, ruid, customer_id, aliases}
+    """
+    global _location_names, _location_data
+    if names and isinstance(names[0], dict):
+        _location_data = names
+        _location_names = [d["name"] for d in names if d.get("name") and len(d["name"]) > 2]
+        alias_count = sum(len(d.get("aliases", [])) for d in names)
+        print(f"Question parser: loaded {len(_location_names)} locations with {alias_count} aliases")
+    else:
+        _location_names = [n for n in names if n and len(n) > 2]
+        _location_data = []
+        print(f"Question parser: loaded {len(_location_names)} location names")
 
 
 # Time period patterns: (compiled regex, canonical label)
@@ -81,18 +94,38 @@ def parse_question(question: str) -> dict:
             time_period = label
             break
 
-    # Location matching: check if any known location name appears in the question
+    # Location matching: check aliases, display names, and raw DB names
     matched_locations = []
-    for loc_name in _location_names:
-        # Match on the distinctive part (e.g. "Kvadrat" from "Kanelsnurren Kvadrat")
-        # Check both full name and last word(s) after brand prefix
-        if loc_name.lower() in q_lower:
-            matched_locations.append(loc_name)
-            continue
-        # Try matching the location suffix (after "Kanelsnurren ", "Steam ", "Mjøl " etc.)
-        parts = loc_name.split(maxsplit=1)
-        if len(parts) == 2 and len(parts[1]) >= 4 and parts[1].lower() in q_lower:
-            matched_locations.append(loc_name)
+    if _location_data:
+        # Rich mode: match against aliases and display names
+        for loc in _location_data:
+            loc_matched = False
+            # Check aliases (most important — includes user-friendly names)
+            for alias in loc.get("aliases", []):
+                if len(alias) >= 3 and alias in q_lower:
+                    matched_locations.append(loc)
+                    loc_matched = True
+                    break
+            if loc_matched:
+                continue
+            # Check display name
+            display = loc.get("display_name", "")
+            if display and display.lower() in q_lower:
+                matched_locations.append(loc)
+                continue
+            # Check raw DB name
+            name = loc.get("name", "")
+            if name and name.lower() in q_lower:
+                matched_locations.append(loc)
+    else:
+        # Legacy mode: flat name matching
+        for loc_name in _location_names:
+            if loc_name.lower() in q_lower:
+                matched_locations.append(loc_name)
+                continue
+            parts = loc_name.split(maxsplit=1)
+            if len(parts) == 2 and len(parts[1]) >= 4 and parts[1].lower() in q_lower:
+                matched_locations.append(loc_name)
 
     return {
         "matched_products": sorted(matched),
@@ -167,7 +200,14 @@ def build_query_hints(question: str) -> str:
 
     # Specific location filter
     for loc in parsed["matched_locations"]:
-        hints.append(f"Location filter: ru.name = '{loc}'")
+        if isinstance(loc, dict):
+            hints.append(
+                f"Location filter: o.revenue_unit_id = '{loc['ruid']}' "
+                f"AND o.customer_id = {loc['customer_id']} "
+                f"-- {loc.get('display_name', loc['name'])}"
+            )
+        else:
+            hints.append(f"Location filter: ru.name = '{loc}'")
         break  # Only use the first match to avoid conflicting filters
 
     # Product matching
