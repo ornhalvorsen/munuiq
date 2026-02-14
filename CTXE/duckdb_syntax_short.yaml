@@ -48,3 +48,5 @@ gotchas:
   - "IDs are VARCHAR even when numeric — don't cast to INT"
   - ":: casting works like PostgreSQL: x::DATE, x::VARCHAR"
   - "Identifiers are case-insensitive. Quote with double-quotes if needed."
+  - "order_time is TIME, NOW()/CURRENT_TIME is TIMETZ. Cast: CURRENT_TIME::TIME"
+  - "For intraday: WHERE order_date = CURRENT_DATE AND order_time <= CURRENT_TIME::TIME"

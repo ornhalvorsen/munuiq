@@ -15,6 +15,9 @@ from app.context.entity_resolver import (
     resolve_locations, format_location_hints,
     resolve_products, format_product_hints,
 )
+from app.context.time_resolver import (
+    resolve_time, format_time_hints, format_trailing_hints,
+)
 
 # ---------------------------------------------------------------------------
 # Module state (loaded once at startup)
@@ -462,6 +465,10 @@ def assemble_context(question: str, force_raw: bool = False, mentions: list[dict
         product_matches = resolve_products(question)
     product_hints_block = format_product_hints(product_matches)
 
+    # 1d. Time resolution
+    time_resolution = resolve_time(question)
+    time_hints_block = format_time_hints(time_resolution)
+
     # 2. Smart analytics routing
     # Use analytics tables unless raw signals detected or force_raw
     use_analytics = (
@@ -495,12 +502,19 @@ def assemble_context(question: str, force_raw: bool = False, mentions: list[dict
     from app.schema import get_data_dictionary
     data_dict = get_data_dictionary()
 
+    # 10. Trailing hints (analytics domain)
+    trailing_block = format_trailing_hints(domains) if use_analytics else ""
+
     # Assemble
     parts = [schema_block]
     if location_hints_block:
         parts.append(location_hints_block)
     if product_hints_block:
         parts.append(product_hints_block)
+    if time_hints_block:
+        parts.append(time_hints_block)
+    if trailing_block:
+        parts.append(trailing_block)
     parts.append(rules_block)
     if recipes_block:
         parts.append(recipes_block)

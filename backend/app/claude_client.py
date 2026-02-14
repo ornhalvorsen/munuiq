@@ -1,4 +1,5 @@
 import json
+from datetime import date, datetime
 import anthropic
 from app.config import settings
 from app.schema import get_schema_context
@@ -77,11 +78,16 @@ def generate_sql(question: str, model: str, customer_ids: list[int] | None = Non
         from app.tenant_context import build_customer_constraint
         customer_constraint = build_customer_constraint(customer_ids)
 
+    today = date.today()
+    now_time = datetime.now().strftime("%H:%M")
+    date_line = f"Today is {today} ({today.strftime('%A')}). Current time: ~{now_time}."
+
     response = client.messages.create(
         model=model,
         max_tokens=1024,
         temperature=0,
-        system=f"""SQL expert for DuckDB. Generate one SELECT query answering the question.
+        system=f"""{date_line}
+SQL expert for DuckDB. Generate one SELECT query answering the question.
 
 {schema_ctx}
 
@@ -97,11 +103,16 @@ def fix_sql(question: str, sql: str, error: str, model: str) -> tuple[str, dict]
     client = get_client()
     schema_ctx = assemble_context(question)
 
+    today = date.today()
+    now_time = datetime.now().strftime("%H:%M")
+    date_line = f"Today is {today} ({today.strftime('%A')}). Current time: ~{now_time}."
+
     response = client.messages.create(
         model=model,
         max_tokens=1024,
         temperature=0,
-        system=f"""SQL expert for DuckDB. Fix the SQL query that failed.
+        system=f"""{date_line}
+SQL expert for DuckDB. Fix the SQL query that failed.
 
 {schema_ctx}
 
