@@ -12,9 +12,10 @@ import {
   AskResponse,
 } from "@/lib/api/analytics";
 import { fetchLookups } from "@/lib/api/lookups";
-import { useMention } from "@/components/mentions/use-mention";
-import { MentionInput } from "@/components/mentions/mention-input";
-import { MentionPopover } from "@/components/mentions/mention-popover";
+import {
+  MentionTextarea,
+  MentionTextareaHandle,
+} from "@/components/mentions/mention-textarea";
 import type { MentionEntity, MentionTriggerConfig } from "@/components/mentions/types";
 import {
   Send,
@@ -207,9 +208,9 @@ export function ChatInterfaceV2() {
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<ChatEntry[]>([]);
   const [entities, setEntities] = useState<Record<string, MentionEntity[]>>({});
+  const [inputText, setInputText] = useState("");
 
-  const mention = useMention({ triggers: TRIGGERS, entities });
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<MentionTextareaHandle>(null);
 
   // Load lookups on mount
   useEffect(() => {
@@ -218,33 +219,43 @@ export function ChatInterfaceV2() {
       .catch((err) => console.warn("Failed to load lookups:", err));
   }, []);
 
-  const handleAsk = useCallback(async () => {
-    if (mention.isEmpty || loading) return;
+  const handleAsk = useCallback(
+    async (
+      text: string,
+      mentions: Array<{ type: string; id: string; label: string }>
+    ) => {
+      if (loading) return;
+      if (!text.trim()) return;
 
-    const { plainText, mentions } = mention.getSubmitData();
-    if (!plainText.trim()) return;
+      setError(null);
+      setLoading(true);
 
-    setError(null);
-    setLoading(true);
-
-    try {
-      const resp = await askQuestion(
-        plainText.trim(),
-        sqlModel,
-        insightModel,
-        mentions.length > 0 ? mentions : undefined
-      );
-      setHistory((prev) => [
-        { response: resp, feedbackGiven: null, feedbackPending: false, sqlExpanded: false },
-        ...prev,
-      ]);
-      mention.clear();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to get answer");
-    } finally {
-      setLoading(false);
-    }
-  }, [mention, loading, sqlModel, insightModel]);
+      try {
+        const resp = await askQuestion(
+          text.trim(),
+          sqlModel,
+          insightModel,
+          mentions.length > 0 ? mentions : undefined
+        );
+        setHistory((prev) => [
+          {
+            response: resp,
+            feedbackGiven: null,
+            feedbackPending: false,
+            sqlExpanded: false,
+          },
+          ...prev,
+        ]);
+        inputRef.current?.clear();
+        setInputText("");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to get answer");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [loading, sqlModel, insightModel]
+  );
 
   async function handleFeedback(index: number, feedback: "up" | "down") {
     const entry = history[index];
@@ -303,13 +314,6 @@ export function ChatInterfaceV2() {
     );
   }
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      mention.handleKeyDown(e);
-    },
-    [mention.handleKeyDown]
-  );
-
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-4 text-xs">
@@ -348,26 +352,19 @@ export function ChatInterfaceV2() {
         Type <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">@</kbd> for locations, <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">$</kbd> for products
       </div>
 
-      <div className="relative flex gap-2">
-        <MentionInput
+      <div className="flex gap-2 items-start">
+        <MentionTextarea
           ref={inputRef}
-          segments={mention.segments}
-          onInput={mention.handleInput}
-          onKeyDown={handleKeyDown}
+          triggers={TRIGGERS}
+          entities={entities}
+          onSubmit={handleAsk}
+          onValueChange={setInputText}
           disabled={loading}
           placeholder="Ask a question about the restaurant data..."
-          onSubmit={handleAsk}
-          className="flex-1"
-        />
-        <MentionPopover
-          autocomplete={mention.autocomplete}
-          onSelect={mention.selectMention}
-          onDismiss={mention.dismissAutocomplete}
-          anchorRef={inputRef}
         />
         <Button
-          onClick={handleAsk}
-          disabled={loading || mention.isEmpty}
+          onClick={() => inputRef.current?.submit()}
+          disabled={loading || !inputText.trim()}
         >
           {loading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
