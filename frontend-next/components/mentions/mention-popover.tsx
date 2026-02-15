@@ -32,11 +32,11 @@ export function MentionPopover({
   onDismiss,
   anchorRef,
 }: MentionPopoverProps) {
-  const [pos, setPos] = useState<{ bottom: number; left: number; width: number } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Map<number, HTMLElement>>(new Map());
 
-  // Position the popover anchored to the input element
+  // Position the popover anchored below the input element
   useEffect(() => {
     if (!autocomplete.active || !anchorRef.current) {
       setPos(null);
@@ -45,9 +45,8 @@ export function MentionPopover({
 
     const rect = anchorRef.current.getBoundingClientRect();
 
-    // Place above the input
     setPos({
-      bottom: window.innerHeight - rect.top + 4,
+      top: rect.bottom + 4,
       left: rect.left,
       width: rect.width,
     });
@@ -83,9 +82,9 @@ export function MentionPopover({
   const content = (
     <div
       ref={popoverRef}
-      className="fixed z-50 rounded-md border bg-popover text-popover-foreground shadow-md animate-in fade-in-0 slide-in-from-bottom-2 duration-100"
+      className="fixed z-50 rounded-md border bg-popover text-popover-foreground shadow-md animate-in fade-in-0 slide-in-from-top-2 duration-100"
       style={{
-        bottom: pos.bottom,
+        top: pos.top,
         left: pos.left,
         width: Math.min(pos.width, 320),
       }}

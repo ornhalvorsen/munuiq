@@ -305,12 +305,9 @@ export function ChatInterfaceV2() {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      const handled = mention.handleKeyDown(e);
-      if (handled) {
-        e.preventDefault();
-      }
+      mention.handleKeyDown(e);
     },
-    [mention]
+    [mention.handleKeyDown]
   );
 
   return (
