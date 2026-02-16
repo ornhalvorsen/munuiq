@@ -253,7 +253,10 @@ export const MentionTextarea = forwardRef<MentionTextareaHandle, MentionTextarea
           value={text}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          onBlur={() => setActive(null)}
+          onBlur={() => {
+            // Delay to let dropdown onMouseDown fire first
+            setTimeout(() => setActive(null), 200);
+          }}
           disabled={disabled}
           placeholder={placeholder}
           rows={1}

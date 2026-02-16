@@ -11,7 +11,7 @@ import {
   submitFeedback,
   AskResponse,
 } from "@/lib/api/analytics";
-import { fetchLookups } from "@/lib/api/lookups";
+import { fetchLookups, invalidateLookups } from "@/lib/api/lookups";
 import {
   MentionTextarea,
   MentionTextareaHandle,
@@ -209,15 +209,31 @@ export function ChatInterfaceV2() {
   const [history, setHistory] = useState<ChatEntry[]>([]);
   const [entities, setEntities] = useState<Record<string, MentionEntity[]>>({});
   const [inputText, setInputText] = useState("");
+  const [lookupStatus, setLookupStatus] = useState<"loading" | "ok" | "error">("loading");
+  const [lookupError, setLookupError] = useState<string | null>(null);
 
   const inputRef = useRef<MentionTextareaHandle>(null);
 
   // Load lookups on mount
-  useEffect(() => {
-    fetchLookups()
-      .then(setEntities)
-      .catch((err) => console.warn("Failed to load lookups:", err));
+  const loadLookups = useCallback(async () => {
+    setLookupStatus("loading");
+    setLookupError(null);
+    invalidateLookups(); // clear cache so retry actually re-fetches
+    try {
+      const data = await fetchLookups();
+      setEntities(data);
+      setLookupStatus("ok");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      console.warn("Failed to load lookups:", msg);
+      setLookupError(msg);
+      setLookupStatus("error");
+    }
   }, []);
+
+  useEffect(() => {
+    loadLookups();
+  }, [loadLookups]);
 
   const handleAsk = useCallback(
     async (
@@ -347,9 +363,25 @@ export function ChatInterfaceV2() {
         </div>
       </div>
 
-      {/* Mention hint */}
-      <div className="text-xs text-muted-foreground">
-        Type <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">@</kbd> for locations, <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">$</kbd> for products
+      {/* Mention hint + entity status */}
+      <div className="text-xs text-muted-foreground flex items-center gap-2">
+        <span>
+          Type <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">@</kbd> for locations, <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">$</kbd> for products
+        </span>
+        {lookupStatus === "loading" && (
+          <span className="text-[10px] opacity-60">Loading entities...</span>
+        )}
+        {lookupStatus === "ok" && (
+          <span className="text-[10px] opacity-60">
+            ({entities.location?.length ?? 0} locations, {entities.product?.length ?? 0} products)
+          </span>
+        )}
+        {lookupStatus === "error" && (
+          <span className="text-[10px] text-destructive">
+            Failed to load entities: {lookupError}{" "}
+            <button onClick={loadLookups} className="underline hover:no-underline">retry</button>
+          </span>
+        )}
       </div>
 
       <div className="flex gap-2 items-start">
