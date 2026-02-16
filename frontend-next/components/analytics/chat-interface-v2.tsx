@@ -216,16 +216,21 @@ export function ChatInterfaceV2() {
 
   // Load lookups on mount
   const loadLookups = useCallback(async () => {
+    console.log("[chat-v2] loadLookups called");
     setLookupStatus("loading");
     setLookupError(null);
     invalidateLookups(); // clear cache so retry actually re-fetches
     try {
       const data = await fetchLookups();
+      console.log("[chat-v2] lookups loaded:", {
+        locations: data.location?.length ?? 0,
+        products: data.product?.length ?? 0,
+      });
       setEntities(data);
       setLookupStatus("ok");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
-      console.warn("Failed to load lookups:", msg);
+      console.error("[chat-v2] lookups FAILED:", msg, err);
       setLookupError(msg);
       setLookupStatus("error");
     }
@@ -363,26 +368,23 @@ export function ChatInterfaceV2() {
         </div>
       </div>
 
-      {/* Mention hint + entity status */}
-      <div className="text-xs text-muted-foreground flex items-center gap-2">
-        <span>
-          Type <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">@</kbd> for locations, <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">$</kbd> for products
-        </span>
-        {lookupStatus === "loading" && (
-          <span className="text-[10px] opacity-60">Loading entities...</span>
-        )}
-        {lookupStatus === "ok" && (
-          <span className="text-[10px] opacity-60">
-            ({entities.location?.length ?? 0} locations, {entities.product?.length ?? 0} products)
-          </span>
-        )}
-        {lookupStatus === "error" && (
-          <span className="text-[10px] text-destructive">
-            Failed to load entities: {lookupError}{" "}
-            <button onClick={loadLookups} className="underline hover:no-underline">retry</button>
-          </span>
-        )}
-      </div>
+      {/* Entity status banner */}
+      {lookupStatus === "loading" && (
+        <div className="rounded-md border border-blue-300 bg-blue-50 dark:bg-blue-950 dark:border-blue-800 p-3 text-sm">
+          Loading locations and products...
+        </div>
+      )}
+      {lookupStatus === "error" && (
+        <div className="rounded-md border border-destructive bg-destructive/10 p-3 text-sm">
+          Failed to load entities: {lookupError}{" "}
+          <button onClick={loadLookups} className="underline font-medium ml-2">Retry</button>
+        </div>
+      )}
+      {lookupStatus === "ok" && (
+        <div className="rounded-md border border-green-300 bg-green-50 dark:bg-green-950 dark:border-green-800 p-3 text-sm">
+          Type <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-xs">@</kbd> for locations ({entities.location?.length ?? 0}), <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-xs">$</kbd> for products ({entities.product?.length ?? 0})
+        </div>
+      )}
 
       <div className="flex gap-2 items-start">
         <MentionTextarea

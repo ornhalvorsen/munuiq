@@ -117,7 +117,8 @@ export const MentionTextarea = forwardRef<MentionTextareaHandle, MentionTextarea
     const results = active
       ? filterEntities(entities[active.trigger.entityType] || [], active.query)
       : [];
-    const showDropdown = active !== null && results.length > 0;
+    // Show dropdown whenever a trigger is active (even with no results)
+    const showDropdown = active !== null;
 
     /* ---- imperative handle ---- */
     useImperativeHandle(ref, () => ({
@@ -209,9 +210,12 @@ export const MentionTextarea = forwardRef<MentionTextareaHandle, MentionTextarea
             return;
           case "Enter":
           case "Tab":
-            e.preventDefault();
-            selectEntity(results[hlIndex]);
-            return;
+            if (results.length > 0) {
+              e.preventDefault();
+              selectEntity(results[hlIndex]);
+              return;
+            }
+            break; // fall through to normal Enter handling
           case "Escape":
             e.preventDefault();
             setActive(null);
@@ -284,6 +288,11 @@ export const MentionTextarea = forwardRef<MentionTextareaHandle, MentionTextarea
             </div>
 
             {/* Items */}
+            {results.length === 0 ? (
+              <div className="px-3 py-3 text-xs text-muted-foreground">
+                No {active!.trigger.label.toLowerCase()}s loaded. Check if the backend is running.
+              </div>
+            ) : (
             <ScrollArea className="max-h-[240px]">
               <div ref={listRef} className="py-1">
                 {results.map((entity, idx) => (
@@ -311,6 +320,7 @@ export const MentionTextarea = forwardRef<MentionTextareaHandle, MentionTextarea
                 ))}
               </div>
             </ScrollArea>
+            )}
           </div>
         )}
       </div>
