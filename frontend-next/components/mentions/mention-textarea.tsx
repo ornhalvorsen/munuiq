@@ -39,13 +39,16 @@ interface MentionTextareaProps {
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-/** Scan backward from cursor for a trigger char preceded by whitespace / start. */
+/** Scan backward from cursor for a trigger char preceded by whitespace / start.
+ *  If multiple triggers match, pick the one closest to the cursor. */
 function findActiveTrigger(
   text: string,
   cursor: number,
   triggers: MentionTriggerConfig[]
 ): { trigger: MentionTriggerConfig; query: string; startPos: number } | null {
   const before = text.slice(0, cursor);
+
+  let best: { trigger: MentionTriggerConfig; query: string; startPos: number } | null = null;
 
   for (const trig of triggers) {
     const idx = before.lastIndexOf(trig.char);
@@ -55,9 +58,11 @@ function findActiveTrigger(
     const query = before.slice(idx + 1);
     if (query.includes("\n")) continue;
 
-    return { trigger: trig, query, startPos: idx };
+    if (!best || idx > best.startPos) {
+      best = { trigger: trig, query, startPos: idx };
+    }
   }
-  return null;
+  return best;
 }
 
 function filterEntities(list: MentionEntity[], query: string): MentionEntity[] {
