@@ -216,21 +216,15 @@ export function ChatInterfaceV2() {
 
   // Load lookups on mount
   const loadLookups = useCallback(async () => {
-    console.log("[chat-v2] loadLookups called");
     setLookupStatus("loading");
     setLookupError(null);
-    invalidateLookups(); // clear cache so retry actually re-fetches
+    invalidateLookups();
     try {
       const data = await fetchLookups();
-      console.log("[chat-v2] lookups loaded:", {
-        locations: data.location?.length ?? 0,
-        products: data.product?.length ?? 0,
-      });
       setEntities(data);
       setLookupStatus("ok");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
-      console.error("[chat-v2] lookups FAILED:", msg, err);
       setLookupError(msg);
       setLookupStatus("error");
     }
@@ -368,21 +362,10 @@ export function ChatInterfaceV2() {
         </div>
       </div>
 
-      {/* Entity status banner */}
-      {lookupStatus === "loading" && (
-        <div className="rounded-md border border-blue-300 bg-blue-50 dark:bg-blue-950 dark:border-blue-800 p-3 text-sm">
-          Loading locations and products...
-        </div>
-      )}
       {lookupStatus === "error" && (
-        <div className="rounded-md border border-destructive bg-destructive/10 p-3 text-sm">
+        <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
           Failed to load entities: {lookupError}{" "}
           <button onClick={loadLookups} className="underline font-medium ml-2">Retry</button>
-        </div>
-      )}
-      {lookupStatus === "ok" && (
-        <div className="rounded-md border border-green-300 bg-green-50 dark:bg-green-950 dark:border-green-800 p-3 text-sm">
-          Type <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-xs">@</kbd> for locations ({entities.location?.length ?? 0}), <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-xs">$</kbd> for products ({entities.product?.length ?? 0})
         </div>
       )}
 

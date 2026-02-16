@@ -1,0 +1,522 @@
+# ============================================================================
+# VALUE LOOKUPS — KS2 Restaurant Analytics
+# ============================================================================
+# Actual values from the database for entity resolution.
+# When a user says "Madla" or "kanelsnurr", map to the right IDs/filters.
+# ============================================================================
+
+
+# --- LOCATIONS --------------------------------------------------------------
+# Source: munu.revenue_units + reference.department_mapping (DuckDB)
+# Join: o.customer_id = ru.customer_id AND o.revenue_unit_id = ru.revenue_unit_id
+#
+# Fields per location:
+#   ruid         = revenue_unit_id (VARCHAR, use for all order/sales joins)
+#   name         = munu.revenue_units.name (official POS name)
+#   display      = reference.department_mapping.display_name (clean reporting name)
+#   planday_dept = Planday department name (for labor joins)
+#   opened       = first order date ever
+#   status       = active / closed / merged
+#   merged_into  = if closed, which ruid absorbed its data
+
+locations:
+  oslo:  # customer_id = 10352
+
+    # --- Active stores ---
+    - ruid: "5307"
+      name: "BB Kanelsnurren Ostbanehallen Oslo"
+      display: "KS Ostbanehallen"
+      planday_dept: "Kanelsnurren Ostbanehallen"
+      opened: "2023-03-04"
+      status: active
+      note: "Flagship Oslo store. Absorbed Steam Ostbanehallen (ruid 5562) in 2025-03."
+
+    - ruid: "5863"
+      name: "BB Kanelsnurren Skoyen"
+      display: "KS Skoyen"
+      planday_dept: "Kanelsnurren Skoyen"
+      opened: "2023-06-01"
+      status: active
+
+    - ruid: "5603"
+      name: "BB Gjellerasen"
+      display: "BB Gjellerasen"
+      planday_dept: "Brodbakerne Gjellerasen"
+      opened: "2023-04-20"
+      status: active
+
+    - ruid: "5602"
+      name: "BB Kanelsnurren Jar"
+      display: "KS Jar"
+      planday_dept: "Kanelsnurren Jar"
+      opened: "2023-04-24"
+      status: active
+
+    - ruid: "7502"
+      name: "BB Kanelsnurren Bekkestua"
+      display: "KS Bekkestua"
+      planday_dept: "Kanelsnurren Bekkestua"
+      opened: "2025-05-09"
+      status: active
+      note: "Replaced Steam Bekkestua (ruid 5605). For historical data, include both ruids."
+
+    - ruid: "7522"
+      name: "BB Kanelsnurren Liertoppen"
+      display: "KS Liertoppen"
+      planday_dept: "Kanelsnurren Liertoppen"
+      opened: "2025-05-13"
+      status: active
+
+    - ruid: "6842"
+      name: "BB Kanelsnurren Valkyrien"
+      display: "KS Valkyrien"
+      planday_dept: "Kanelsnurren Valkyrien"
+      opened: "2024-06-26"
+      status: active
+
+    - ruid: "7942"
+      name: "BB Kanelsnurren Holmenkollen"
+      display: "KS Holmenkollen"
+      planday_dept: "Kanelsnurren Holmenkollen"
+      opened: "2025-11-27"
+      status: active
+
+    - ruid: "5493"
+      name: "Encore (Mendels)"
+      display: "Encore"
+      planday_dept: "Encore"
+      opened: "2023-03-30"
+      status: active
+
+    - ruid: "5606"
+      name: "Mjol Homansbyen"
+      display: "Mjol Homansbyen"
+      planday_dept: "Mjol Homansbyen"
+      brand: mjol
+      opened: "2023-04-18"
+      status: active
+
+    - ruid: "7782"
+      name: "Mjol Carl Berner"
+      display: "Mjol Carl Berner"
+      planday_dept: "Mjol Carl Berner"
+      brand: mjol
+      opened: "2025-09-15"
+      status: active
+
+    # --- Closed / merged stores ---
+    - ruid: "5605"
+      name: "Steam Bekkestua"
+      display: "KS Bekkestua"
+      planday_dept: "Steam Bekkestua"
+      brand: steam
+      opened: "2023-04-20"
+      closed: "2025-05-09"
+      status: merged
+      merged_into: "7502"
+      note: "Rebranded to BB Kanelsnurren Bekkestua (ruid 7502)."
+
+    - ruid: "5562"
+      name: "Steam Ostbanehallen"
+      display: "KS Ostbanehallen"
+      planday_dept: "(INAKTIV) Steam Kaffebar Ostbanehallen"
+      brand: steam
+      opened: "2023-04-17"
+      closed: "2025-03-14"
+      status: merged
+      merged_into: "5307"
+      note: "Absorbed into BB Kanelsnurren Ostbanehallen (ruid 5307)."
+
+    - ruid: "5604"
+      name: "Steam CC Vest"
+      display: "Steam CC Vest"
+      brand: steam
+      opened: "2023-04-19"
+      closed: "2025-12-31"
+      status: closed
+      note: "Closed. No Planday mapping. Planday dept 'Steam Kaffebar CC Vest' marked inactive."
+
+    - ruid: "7242"
+      name: "X -"
+      status: inactive
+      note: "Test/placeholder. No orders ever."
+
+
+  stavanger:  # customer_id = 761
+
+    # --- Active stores ---
+    - ruid: "365"
+      name: "KS Stavanger"
+      display: "KS Arnerageren"
+      planday_dept: "Arneageren"
+      opened: "2017-11-05"
+      status: active
+      note: "Also known as Arnerageren. Oldest Oslo/Stavanger store."
+
+    - ruid: "362"
+      name: "KS Madla"
+      display: "KS Madla"
+      planday_dept: "Madla"
+      opened: "2018-12-31"
+      status: active
+
+    - ruid: "366"
+      name: "KS Sentrum"
+      display: "KS Verksgata"
+      planday_dept: "Verksgata"
+      opened: "2019-01-02"
+      status: active
+      note: "Also known as Verksgata."
+
+    - ruid: "363"
+      name: "KS Kvadrat"
+      display: "KS Kvadrat"
+      planday_dept: "Kvadrat"
+      opened: "2018-12-31"
+      status: active
+
+    - ruid: "6162"
+      name: "KS Kvadrat Nord"
+      display: "KS Kvadrat Nord"
+      opened: "2023-10-02"
+      status: active
+      merged_into: "363"
+      note: "Mapped under KS Kvadrat (ruid 363) in dept mapping. Separate revenue unit."
+
+    - ruid: "362"
+      name: "KS Madla"
+      display: "KS Madla"
+      planday_dept: "Madla"
+      opened: "2018-12-31"
+      status: active
+
+    - ruid: "3743"
+      name: "KS Maxi Sandnes"
+      display: "KS Maxi"
+      planday_dept: "Maxi Sandnes"
+      opened: "2021-09-30"
+      status: active
+
+    - ruid: "364"
+      name: "KS Sandnes"
+      display: "KS Sandnes"
+      planday_dept: "Sandnes"
+      opened: "2017-03-29"
+      status: active
+      note: "Oldest store in the database."
+
+    - ruid: "3744"
+      name: "KS Stadioparken"
+      display: "KS Stadionparken"
+      planday_dept: "Hinna"
+      opened: "2021-10-07"
+      status: active
+      note: "Planday calls this 'Hinna'. Munu calls it 'Stadioparken'."
+
+    - ruid: "4642"
+      name: "KS Tasta"
+      display: "KS Tasta"
+      planday_dept: "Tasta"
+      opened: "2022-05-30"
+      status: active
+
+    - ruid: "3207"
+      name: "KS Forus"
+      display: "KS Forus"
+      planday_dept: "Drive thru"
+      opened: "2021-02-09"
+      status: active
+      note: "Planday calls this 'Drive thru'. Munu calls it 'Forus'."
+
+    - ruid: "1742"
+      name: "KS Herbarium"
+      display: "KS Herbarium"
+      planday_dept: "Herbarium"
+      opened: "2020-03-02"
+      status: active
+
+    - ruid: "562"
+      name: "KS Ost"
+      display: "KS Ryfylkegata"
+      planday_dept: "Ost"
+      opened: "2019-02-12"
+      status: active
+      note: "Planday calls this 'Ost'. Also known as Ryfylkegata."
+
+    - ruid: "7042"
+      name: "KS Jorhagen"
+      display: "KS Jorhagen"
+      planday_dept: "Jorhagen"
+      opened: "2024-09-23"
+      status: active
+
+    - ruid: "3023"
+      name: "KS Bryne"
+      display: "KS Bryne"
+      planday_dept: "M44"
+      opened: "2020-11-04"
+      status: active
+      note: "Planday calls this 'M44'."
+
+    - ruid: "7402"
+      name: "KS Kilden"
+      display: "KS Kilden"
+      planday_dept: "Kilden"
+      opened: "2025-04-09"
+      status: active
+
+    - ruid: "2722"
+      name: "KS Eiganes"
+      display: "KS Eiganes"
+      opened: "2020-08-07"
+      status: active
+      note: "No Planday department linked."
+
+    - ruid: "8043"
+      name: "KS Egersund"
+      display: "KS Egersund"
+      planday_dept: "Egersund"
+      opened: "2026-01-14"
+      status: active
+      note: "Newest store."
+
+    - ruid: "5263"
+      name: "Steam Stavanger"
+      display: "Steam Stavanger"
+      planday_dept: "Steam Stavanger"
+      brand: steam
+      opened: "2023-02-15"
+      status: active
+
+    # --- Inactive ---
+    - ruid: "4182"
+      name: "KS Event"
+      opened: "2022-03-02"
+      closed: "2023-07-01"
+      status: inactive
+      note: "Pop-up / event location. No Planday mapping."
+
+    - ruid: "4142"
+      name: "KS Food court"
+      opened: "2022-02-10"
+      status: low_activity
+      note: "Still has occasional orders but very low volume. No Planday mapping."
+
+
+  # --- Non-store Planday departments (not in munu.revenue_units) ---
+  planday_non_store:
+    oslo:
+      - {dept: "Administrasjon",         type: admin,      note: "Office/admin staff"}
+      - {dept: "Gjellerasen produksjon", type: production,  note: "Bakery production at Gjellerasen"}
+      - {dept: "Mjol Sagene",            type: store,       note: "No Munu installation yet"}
+      - {dept: "Kveitemjol Aker Brygge", type: store,       note: "No Munu installation yet"}
+      - {dept: "Steam Kaffebar CC Vest", type: inactive,    note: "Closed"}
+    stavanger:
+      - {dept: "Adminstrasjon",  type: admin,      note: "Office/admin staff"}
+      - {dept: "Produksjon",     type: production,  note: "Main production facility"}
+      - {dept: "Konditori",      type: production,  note: "Pastry production"}
+      - {dept: "Transport",      type: support,     note: "Delivery drivers"}
+      - {dept: "Renhold",        type: support,     note: "Cleaning staff"}
+
+  brands:
+    kanelsnurren: "Core bakery brand. Most locations. BB = Brod Bakerne (parent company name in Oslo)."
+    steam: "Coffee bar concept. CC Vest (closed), Bekkestua (merged), Ostbanehallen (merged), Stavanger (active)."
+    mjol: "Artisan bakery — Homansbyen and Carl Berner (Oslo only)."
+    encore: "Mendels location (Oslo only)."
+    kveitemjol: "Aker Brygge (Oslo, not yet in Munu POS)."
+
+
+# --- PRODUCT CATEGORIES (munu.articles_unified) ---------------------------
+# Always filter: WHERE category_is_active = true
+
+categories:
+  bakery:
+    Boller:
+      subcategories: [Boller, "Boller (sesong)", Saltbakst, Scones, Smordeig]
+      description: "Pastries and buns — core product. Kanelsnurr, Solskinnsbolle, etc."
+    Brod:
+      subcategories: [Brod, "Brod (glutenfri)", Focaccia, Rundstykker]
+      description: "Artisan breads."
+    "Kaker (hele)":
+      subcategories: ["Kaker (hele)", Tilbehor]
+      description: "Whole cakes (ordered/custom)."
+    "Kaker (porsjon)":
+      subcategories: [Brownie, Cakepops/minikaker, Kjeks, Makroner, "Muffins/cupcakes", Porsjonskaker, Terter]
+      description: "Individual cake portions, slices, brownies, cookies."
+    Sandwich:
+      subcategories: [Salat, "Sandwich (annen)", "Sandwich (basis)", "Sandwich (glutenfri)", "Sandwich (sesong)", Toast]
+      description: "Sandwiches, salads, toast."
+
+  drinks:
+    "Varm drikke":
+      subcategories: ["Annen varm drikke", "Husets kaffe", "Kaffe (tilbehor)", Kaffedrikker]
+      description: "Hot beverages — filter coffee, espresso drinks, tea."
+    "Kald drikke":
+      subcategories: ["Annen kald drikke", Brus, "Saft/juice", Sjokolademelk, Smoothie, Vann]
+      description: "Cold beverages."
+
+  retail:
+    "Delivarer (egenprodusert)":
+      subcategories: [Diverse, Egenprodusert, Kaffesnurren, Palegg, Sesongvarer]
+      description: "Retail products — own production."
+    "Delivarer (tredjepart)":
+      subcategories: [Delivarer, Diverse, "Kaffe/Te", Kaffeutstyr, Sesongvarer, Sjokolade, Snacks]
+      description: "Retail products — third party."
+
+  other:
+    Diverse:
+      subcategories: [Diverse, Tilbehor, Tilvalg]
+      description: "Miscellaneous items, add-ons."
+    "Annen inntekt":
+      subcategories: [Admin, Diverse, Embalasje]
+      description: "Non-product income (packaging, admin)."
+
+
+# --- TOP PRODUCTS (by revenue, last 12 months) ----------------------------
+# These are the names users are most likely to ask about.
+
+top_products:
+  stavanger:
+    - {name: "Solskinnsbolle",               category: "Boller",     revenue_mnok: 13.4}
+    - {name: "Club sandwich",                category: "Sandwich",   revenue_mnok: 11.8}
+    - {name: "Husets kaffe",                 category: "Varm drikke", revenue_mnok: 7.3}
+    - {name: "Latte",                        category: "Varm drikke", revenue_mnok: 6.5}
+    - {name: "Kanelsnurr",                   category: "Boller",     revenue_mnok: 6.3}
+    - {name: "Cappuccino",                   category: "Varm drikke", revenue_mnok: 6.1}
+    - {name: "Musliscones",                  category: "Boller",     revenue_mnok: 4.8}
+    - {name: "Sandwich med ost og skinke",   category: "Sandwich",   revenue_mnok: 4.7}
+    - {name: "BLT sandwich",                category: "Sandwich",   revenue_mnok: 3.0}
+    - {name: "Caesarsalat",                  category: "Sandwich",   revenue_mnok: 2.9}
+    - {name: "Fransk landbrod",              category: "Brod",       revenue_mnok: 2.9}
+    - {name: "Mocca",                        category: "Varm drikke", revenue_mnok: 2.7}
+    - {name: "Drommebolle",                  category: "Boller",     revenue_mnok: 2.6}
+
+  oslo:
+    - {name: "Latte",                        category: "Varm drikke", revenue_mnok: 4.2}
+    - {name: "Solskinnsbolle",               category: "Boller",     revenue_mnok: 3.9}
+    - {name: "Kanelsnurr",                   category: "Boller",     revenue_mnok: 3.8}
+    - {name: "Pistasjknute",                 category: "Boller",     revenue_mnok: 3.2}
+    - {name: "4 boller for 149",             category: "Boller",     revenue_mnok: 3.1, note: "Bundle SKU"}
+    - {name: "Cappuccino",                   category: "Varm drikke", revenue_mnok: 2.9}
+    - {name: "Husets kaffe",                 category: "Varm drikke", revenue_mnok: 2.7}
+
+
+# --- WASTE REASONS (munu.waste_reasons) ------------------------------------
+# Same 6 reasons in both outlets.
+
+waste_reasons:
+  - {name: "Slutt dag",       meaning: "End of day — unsold items discarded at close"}
+  - {name: "Utgatt pa dato",  meaning: "Expired — past sell-by date"}
+  - {name: "Odelagt",         meaning: "Damaged — dropped, broken, etc."}
+  - {name: "Kundeklage",      meaning: "Customer complaint — remade or refunded"}
+  - {name: "Intern rep.",     meaning: "Internal use — staff meals, meetings"}
+  - {name: "Smaksprove",      meaning: "Tasting/sampling — promotional"}
+
+
+# --- PAYMENT TYPES (munu.payment_types) ------------------------------------
+# Common ones the user might reference:
+
+payment_types_common:
+  - "Kort"             # Card (debit/credit)
+  - "Vipps"            # Norwegian mobile payment
+  - "Kontant"          # Cash
+  - "Gavekort"         # Gift card
+  - "Faktura"          # Invoice (B2B)
+  - "Cakeiteasy"       # Web order payment
+
+
+# --- EMPLOYEE ROLES (planday.employee_groups) ------------------------------
+
+employee_roles:
+  both_regions:
+    - {name: "Baker",                    meaning: "Bakery production"}
+    - {name: "Butikkleder",              meaning: "Store manager"}
+    - {name: "Butikkmedarbeider",        meaning: "Store staff / cashier"}
+    - {name: "Produksjonsleder",         meaning: "Production manager"}
+    - {name: "Produksjonsmedarbeider",   meaning: "Production staff"}
+    - {name: "Administrativ medarbeider", meaning: "Admin / office"}
+    - {name: "Laerling Baker",           meaning: "Baker apprentice"}
+    - {name: "Regionsleder",             meaning: "Regional manager"}
+    - {name: "Sjafor",                   meaning: "Driver / delivery"}
+
+  stavanger_only:
+    - {name: "Ass. butikkleder",         meaning: "Assistant store manager"}
+    - {name: "Konditor",                 meaning: "Pastry chef"}
+    - {name: "Kaffebrenner",             meaning: "Coffee roaster"}
+    - {name: "Laerling Konditor",        meaning: "Pastry chef apprentice"}
+    - {name: "Renholder",                meaning: "Cleaner"}
+
+
+# --- DATA AVAILABILITY ----------------------------------------------------
+
+data_ranges:
+  orders:            {from: "2017-03-29", to: "today",      rows: "~8M"}
+  article_waste:     {from: "2019-10-18", to: "today",      rows: "~760K"}
+  shifts:            {from: "2023-01-01", to: "~3mo ahead", rows: "~132K"}
+  punchclock_shifts: {from: "2023-01-01", to: "today",      rows: "~97K"}
+  cakeiteasy_orders: {from: "2025-05-12", to: "today",      rows: "~3.9K"}
+
+
+# --- NAME RESOLUTION HINTS ------------------------------------------------
+# Common ways users might refer to things, mapped to correct values.
+
+aliases:
+  locations:
+    # Oslo — all known names from munu, planday, and common usage
+    "ostbanehallen": {ruid: "5307", note: "Historical data also in ruid 5562 (Steam Ostbanehallen)"}
+    "skoyen": {ruid: "5863"}
+    "jar": {ruid: "5602"}
+    "gjellerasen": {ruid: "5603"}
+    "bekkestua": {ruid: "7502", note: "Historical data also in ruid 5605 (Steam Bekkestua)"}
+    "liertoppen": {ruid: "7522"}
+    "valkyrien": {ruid: "6842"}
+    "holmenkollen": {ruid: "7942"}
+    "homansbyen": {ruid: "5606"}
+    "carl berner": {ruid: "7782"}
+    "mendels": {ruid: "5493"}
+    "encore": {ruid: "5493"}
+    "cc vest": {ruid: "5604", note: "Closed 2025-12"}
+    # Stavanger — includes Planday aliases
+    "arnerageren": {ruid: "365", note: "Official Munu name is 'KS Stavanger'"}
+    "madla": {ruid: "362"}
+    "sentrum": {ruid: "366"}
+    "verksgata": {ruid: "366", note: "Planday name for KS Sentrum"}
+    "kvadrat": {ruid: "363", note: "Also Kvadrat Nord (ruid 6162)"}
+    "kvadrat nord": {ruid: "6162"}
+    "maxi": {ruid: "3743"}
+    "maxi sandnes": {ruid: "3743"}
+    "forus": {ruid: "3207"}
+    "drive thru": {ruid: "3207", note: "Planday name for KS Forus"}
+    "tasta": {ruid: "4642"}
+    "herbarium": {ruid: "1742"}
+    "ost": {ruid: "562"}
+    "ryfylkegata": {ruid: "562", note: "Also known as KS Ost"}
+    "jorhagen": {ruid: "7042"}
+    "bryne": {ruid: "3023"}
+    "m44": {ruid: "3023", note: "Planday name for KS Bryne"}
+    "kilden": {ruid: "7402"}
+    "eiganes": {ruid: "2722"}
+    "sandnes": {ruid: "364", note: "Also Maxi Sandnes (ruid 3743)"}
+    "stadionparken": {ruid: "3744"}
+    "hinna": {ruid: "3744", note: "Planday name for KS Stadioparken"}
+    "egersund": {ruid: "8043"}
+    "steam stavanger": {ruid: "5263"}
+
+  products:
+    "kanelsnurr": "Boller — cinnamon bun, flagship product"
+    "solskinnsbolle": "Boller — sunshine bun, #1 by revenue"
+    "pistasjknute": "Boller — pistachio knot"
+    "drommebolle": "Boller — dream bun"
+    "musliscones": "Boller > Scones — muesli scones"
+    "club sandwich": "Sandwich — #1 sandwich by revenue"
+    "blt": "Sandwich — BLT sandwich"
+    "caesarsalat": "Sandwich > Salat"
+    "landbrod": "Brod — French country bread"
+    "latte": "Varm drikke > Kaffedrikker"
+    "cappuccino": "Varm drikke > Kaffedrikker"
+    "mocca": "Varm drikke > Kaffedrikker"
+    "husets kaffe": "Varm drikke > Husets kaffe — filter/drip coffee"
+
+  regions:
+    "oslo": {customer_id: 10352, planday_portal: "oslo"}
+    "stavanger": {customer_id: 761, planday_portal: "stavanger"}

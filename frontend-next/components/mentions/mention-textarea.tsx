@@ -290,7 +290,9 @@ export const MentionTextarea = forwardRef<MentionTextareaHandle, MentionTextarea
             {/* Items */}
             {results.length === 0 ? (
               <div className="px-3 py-3 text-xs text-muted-foreground">
-                No {active!.trigger.label.toLowerCase()}s loaded. Check if the backend is running.
+                {(entities[active!.trigger.entityType] || []).length === 0
+                  ? `No ${active!.trigger.label.toLowerCase()}s available`
+                  : `No matches for "${active!.query}"`}
               </div>
             ) : (
             <ScrollArea className="max-h-[240px]">
