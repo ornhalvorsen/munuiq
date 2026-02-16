@@ -4,6 +4,7 @@ import {
   useState,
   useRef,
   useEffect,
+  useMemo,
   forwardRef,
   useImperativeHandle,
 } from "react";
@@ -77,6 +78,58 @@ function filterEntities(list: MentionEntity[], query: string): MentionEntity[] {
     .slice(0, 20);
 }
 
+/** Color classes for mention chips by trigger color key */
+const MENTION_COLORS: Record<string, string> = {
+  blue: "bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300",
+  amber: "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300",
+  green: "bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-300",
+  red: "bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300",
+};
+
+type Segment = { text: string; mention: boolean; color?: string };
+
+/** Parse text into segments: plain text and mention chips */
+function buildSegments(
+  text: string,
+  mentions: Array<{ type: string; id: string; label: string }>,
+  triggers: MentionTriggerConfig[]
+): Segment[] {
+  if (!text) return [];
+
+  const triggerByType = new Map(triggers.map((t) => [t.entityType, t]));
+  const ranges: Array<{ start: number; end: number; color: string }> = [];
+
+  for (const m of mentions) {
+    if (!text.includes(m.label)) continue;
+    const trig = triggerByType.get(m.type);
+    if (!trig) continue;
+    const needle = trig.char + m.label;
+    let from = 0;
+    while (true) {
+      const idx = text.indexOf(needle, from);
+      if (idx === -1) break;
+      if (!ranges.some((r) => idx < r.end && idx + needle.length > r.start)) {
+        ranges.push({ start: idx, end: idx + needle.length, color: trig.color });
+        break;
+      }
+      from = idx + 1;
+    }
+  }
+
+  ranges.sort((a, b) => a.start - b.start);
+
+  const segs: Segment[] = [];
+  let pos = 0;
+  for (const r of ranges) {
+    if (r.start > pos) segs.push({ text: text.slice(pos, r.start), mention: false });
+    segs.push({ text: text.slice(r.start, r.end), mention: true, color: r.color });
+    pos = r.end;
+  }
+  if (pos < text.length) segs.push({ text: text.slice(pos), mention: false });
+
+  return segs;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
@@ -106,8 +159,9 @@ export const MentionTextarea = forwardRef<MentionTextareaHandle, MentionTextarea
     } | null>(null);
     const [hlIndex, setHlIndex] = useState(0);
 
-    /* ---- refs (always-fresh values for imperative handle) ---- */
+    /* ---- refs ---- */
     const taRef = useRef<HTMLTextAreaElement>(null);
+    const mirrorRef = useRef<HTMLDivElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
     const textRef = useRef(text);
     textRef.current = text;
@@ -122,8 +176,13 @@ export const MentionTextarea = forwardRef<MentionTextareaHandle, MentionTextarea
     const results = active
       ? filterEntities(entities[active.trigger.entityType] || [], active.query)
       : [];
-    // Show dropdown whenever a trigger is active (even with no results)
     const showDropdown = active !== null;
+
+    const segments = useMemo(
+      () => buildSegments(text, mentions, triggers),
+      [text, mentions, triggers]
+    );
+    const hasMentions = segments.some((s) => s.mention);
 
     /* ---- imperative handle ---- */
     useImperativeHandle(ref, () => ({
@@ -220,7 +279,7 @@ export const MentionTextarea = forwardRef<MentionTextareaHandle, MentionTextarea
               selectEntity(results[hlIndex]);
               return;
             }
-            break; // fall through to normal Enter handling
+            break;
           case "Escape":
             e.preventDefault();
             setActive(null);
@@ -235,6 +294,12 @@ export const MentionTextarea = forwardRef<MentionTextareaHandle, MentionTextarea
         if (!t) return;
         const live = mentions.filter((m) => text.includes(m.label));
         onSubmit(t, live);
+      }
+    }
+
+    function syncScroll() {
+      if (mirrorRef.current && taRef.current) {
+        mirrorRef.current.scrollTop = taRef.current.scrollTop;
       }
     }
 
@@ -257,13 +322,40 @@ export const MentionTextarea = forwardRef<MentionTextareaHandle, MentionTextarea
     /* ---- render ---- */
     return (
       <div className="relative flex-1">
+        {/* Mirror overlay — renders text with styled mention bricks */}
+        {hasMentions && (
+          <div
+            ref={mirrorRef}
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-[1] overflow-hidden whitespace-pre-wrap break-words rounded-md border border-transparent px-3 py-[7px] text-base leading-[1.5] md:text-sm"
+          >
+            {segments.map((seg, i) =>
+              seg.mention ? (
+                <span
+                  key={i}
+                  className={cn(
+                    "rounded-[4px] px-0.5 -mx-[1px]",
+                    MENTION_COLORS[seg.color!] ?? MENTION_COLORS.blue
+                  )}
+                >
+                  {seg.text}
+                </span>
+              ) : (
+                <span key={i} className="invisible">
+                  {seg.text}
+                </span>
+              )
+            )}
+          </div>
+        )}
+
         <textarea
           ref={taRef}
           value={text}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
+          onScroll={syncScroll}
           onBlur={() => {
-            // Delay to let dropdown onMouseDown fire first
             setTimeout(() => setActive(null), 200);
           }}
           disabled={disabled}
@@ -272,6 +364,7 @@ export const MentionTextarea = forwardRef<MentionTextareaHandle, MentionTextarea
           className={cn(
             "placeholder:text-muted-foreground dark:bg-input/30 border-input min-h-[36px] w-full min-w-0 rounded-md border bg-transparent px-3 py-1.5 text-base shadow-xs transition-[color,box-shadow] outline-none resize-none md:text-sm",
             "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+            hasMentions && "text-transparent caret-[var(--foreground)] selection:bg-accent/40",
             disabled && "pointer-events-none cursor-not-allowed opacity-50",
             className
           )}
@@ -313,7 +406,7 @@ export const MentionTextarea = forwardRef<MentionTextareaHandle, MentionTextarea
                         : "hover:bg-accent/50"
                     )}
                     onMouseDown={(e) => {
-                      e.preventDefault(); // keep textarea focused
+                      e.preventDefault();
                       selectEntity(entity);
                     }}
                   >
