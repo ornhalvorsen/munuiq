@@ -341,9 +341,7 @@ export const MentionTextarea = forwardRef<MentionTextareaHandle, MentionTextarea
                   {seg.text}
                 </span>
               ) : (
-                <span key={i} className="invisible">
-                  {seg.text}
-                </span>
+                <span key={i}>{seg.text}</span>
               )
             )}
           </div>
