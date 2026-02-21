@@ -39,6 +39,8 @@ DEPENDENCY_GRAPH = [
     ("daypart_config",             "support/daypart_config.sql",          [],                                       None),
     ("product_group_definitions",  "support/product_group_definitions.sql", [],                                     None),
     ("refresh_log",                "support/refresh_log.sql",             [],                                       None),
+    ("terminal_location_map",      "support/terminal_location_map.sql",   [],                                       None),
+    ("absence_type_mapping",       "support/absence_type_mapping.sql",    [],                                       None),
 
     # Tier 2 — daily cubes
     ("daily_location_sales",       "tier2/daily_location_sales.sql",      [],                                       None),
@@ -48,8 +50,9 @@ DEPENDENCY_GRAPH = [
     ("daily_location_daypart",     "tier2/daily_location_daypart.sql",    [],                                       None),
     ("daily_location_labor",       "tier2/daily_location_labor.sql",      ["daily_location_sales"],                  None),
     ("daily_location_labor_by_role", "tier2/daily_location_labor_by_role.sql", [],                                   None),
-    ("daily_location_sick_leave",  "tier2/daily_location_sick_leave.sql", [],                                       "sick_leave"),
+    ("daily_location_sick_leave",  "tier2/daily_location_sick_leave.sql", ["absence_type_mapping", "daily_location_labor"], "sick_leave"),
     ("daily_location_labor_hourly", "tier2/daily_location_labor_hourly.sql", [],                                    None),
+    ("daily_location_waste",       "tier2/daily_location_waste.sql",      ["terminal_location_map"],                  None),
 
     # Tier 3 — rolling metrics
     ("location_trailing_metrics",  "tier3/location_trailing_metrics.sql", ["daily_location_sales", "daily_location_labor"], None),
@@ -188,7 +191,7 @@ def refresh(mode: str = "full", date_from: str = None, date_to: str = None):
     if absence_available:
         print("Discovery: absence data available — sick leave cubes will be populated")
     else:
-        print("Discovery: no absence data — sick leave cubes will be created empty")
+        print("Discovery: no absence data — sick leave cubes will be skipped")
 
     # Build date filter for incremental mode
     date_filter = ""
@@ -224,18 +227,6 @@ def refresh(mode: str = "full", date_from: str = None, date_to: str = None):
         if gate == "sick_leave" and not absence_available:
             print(f"\n  [{table_name}] SKIPPED — no absence data (discovery-gated)")
             skipped.add(table_name)
-            # Still execute the DDL to create the empty table schema
-            try:
-                sql_raw = _read_sql(sql_path)
-                sql = _render_sql(sql_raw)
-                # Only execute CREATE statements, not INSERTs
-                for stmt in sql.split(";"):
-                    stmt = stmt.strip()
-                    if stmt and "CREATE" in stmt.upper():
-                        execute(stmt)
-                print(f"    Schema created (empty table)")
-            except Exception as e:
-                print(f"    Warning: could not create schema — {e}")
             continue
 
         # Check dependencies

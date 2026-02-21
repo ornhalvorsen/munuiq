@@ -333,21 +333,20 @@ waste_trends_by_location:
     - waste analysis with location breakdown
     - waste cost trends over time
   notes: |
-    - IMPORTANT: revenue_units.inid is always NULL, so waste-to-location join goes
-      through terminals -> installations (using installation.name for display).
-    - Join path: article_waste -> terminals (terminal_id) -> installations (inid)
-    - Installation names differ from revenue_unit names (e.g., "Kanelsnurren Forus" vs "KS Forus")
+    - For trends/aggregates, prefer analytics.daily_location_waste cube (has revenue_unit_id).
+    - For raw waste: JOIN analytics.terminal_location_map tlm to get revenue_unit_id.
+    - Do NOT join waste to revenue_units directly — revenue_units.inid is always NULL.
     - total_cost is pre-computed on the waste record (quantity * unit_cost)
     - For waste-as-%-of-production: compare waste units to sold units in same period
   sql: |
     WITH weekly_waste AS (
         SELECT DATE_TRUNC('week', aw.waste_date) AS week,
-               i.name AS store,
+               tlm.location_name AS store,
                SUM(aw.quantity) AS waste_units,
                ROUND(SUM(aw.total_cost)) AS waste_cost
         FROM munu.article_waste aw
-        JOIN munu.terminals t ON aw.customer_id = t.customer_id AND aw.terminal_id = t.terminal_id
-        JOIN munu.installations i ON t.customer_id = i.customer_id AND t.inid = i.inid
+        JOIN analytics.terminal_location_map tlm
+          ON aw.customer_id = tlm.customer_id AND aw.terminal_id = tlm.terminal_id
         WHERE aw.waste_date >= CURRENT_DATE - INTERVAL '3 months'
         GROUP BY ALL
     )
@@ -645,10 +644,11 @@ analytics_sick_leave:
     - absence analysis
     - sykefravær / egenmelding
   notes: |
-    - Uses location_sick_leave_trailing if data is available
-    - Falls back to noting data may not be populated
-    - Norwegian sick leave: egenmelding (self-cert), sykemelding (doctor-cert)
+    - Uses location_sick_leave_trailing — discovery-gated, only exists if absence data found
+    - Norwegian sick leave: egenmelding (self-cert, days 1-3), sykemelding (doctor-cert)
     - National average is ~6-7%
+    - sick_rate_vs_fleet_delta: positive = worse than fleet average
+    - For daily detail, use daily_location_sick_leave with date filters
   sql: |
     SELECT ltm.location_name,
            ROUND(slt.trailing_28d_sick_rate_pct, 1) AS sick_rate_28d,
@@ -660,3 +660,29 @@ analytics_sick_leave:
     JOIN analytics.location_trailing_metrics ltm
       ON slt.customer_id = ltm.customer_id AND slt.revenue_unit_id = ltm.revenue_unit_id
     ORDER BY slt.trailing_28d_sick_rate_pct DESC
+
+
+# ---------------------------------------------------------------------------
+# 17. WASTE BY LOCATION (analytics cube)
+# ---------------------------------------------------------------------------
+# Trigger: "waste trend", "waste by store", "waste overview"
+
+analytics_waste_by_location:
+  question: "What's our waste trend by store?"
+  domains: [analytics]
+  triggers:
+    - waste trend/overview using analytics cube
+    - waste by store over time
+  notes: |
+    - Uses analytics.daily_location_waste cube — same revenue_unit_id as sales cubes
+    - location_name matches daily_location_sales — use identical location filters
+    - For specific product waste at a location, add article_name ILIKE filter
+  sql: |
+    SELECT location_name,
+           DATE_TRUNC('week', waste_date) AS week,
+           SUM(waste_units) AS units,
+           ROUND(SUM(waste_cost)) AS cost
+    FROM analytics.daily_location_waste
+    WHERE waste_date >= CURRENT_DATE - INTERVAL '3 months'
+    GROUP BY location_name, DATE_TRUNC('week', waste_date)
+    ORDER BY week, cost DESC

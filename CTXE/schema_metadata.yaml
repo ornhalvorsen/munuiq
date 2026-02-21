@@ -302,10 +302,10 @@ munu.terminals:
       description: "ETL load timestamp."
   joins:
     to_installations: "i.customer_id = t.customer_id AND i.inid = t.inid"
-    to_revenue_units: "ru.customer_id = t.customer_id AND ru.inid = t.inid"
   gotchas:
-    - "Terminals link to locations via installations (inid), not directly to revenue_units."
+    - "Terminals link to locations via installations (inid). Do NOT join to revenue_units (ru.inid is always NULL)."
     - "This is the only reliable path for waste -> location joins."
+    - "Multiple terminals can map to one installation (e.g. 'Kanelsnurren Maxi 01' and '02')."
 
 
 # ============================================================================
@@ -588,20 +588,20 @@ munu.revenue_units:
       description: "Revenue unit ID. String even when numeric."
     inid:
       type: VARCHAR
-      description: "Parent installation ID. FK to munu.installations."
+      description: "Installation ID. ALWAYS NULL — do NOT use for joins. Use revenue_unit_id instead."
     name:
       type: VARCHAR
-      description: "Store/brand name (e.g. 'Kanelsnurren Majorstuen', 'Steam Torggata')."
+      description: "Store/brand name (e.g. 'KS Maxi Sandnes', 'Steam Torggata'). User-facing names."
     _loaded_at:
       type: TIMESTAMP
       description: "ETL load timestamp."
   joins:
     from_orders: "o.customer_id = ru.customer_id AND o.revenue_unit_id = ru.revenue_unit_id"
-    from_terminals: "t.customer_id = ru.customer_id AND t.inid = ru.inid"
-    to_installations: "i.customer_id = ru.customer_id AND i.inid = ru.inid"
     from_department_mapping: "dm.munu_customer_id = ru.customer_id AND dm.munu_revenue_unit_id = ru.revenue_unit_id"
   gotchas:
-    - "This is the correct location table. Do NOT use munu.installations for location analytics."
+    - "This is the correct location table for sales/orders. Join orders via revenue_unit_id."
+    - "revenue_units.inid is ALWAYS NULL — do NOT join to terminals or installations via inid."
+    - "For waste→location, use munu.installations instead (waste has no revenue_unit_id)."
     - "Some locations can be excluded via admin.settings (key='excluded_locations')."
     - "35 rows across both outlets — small enough to include all names in context."
 
@@ -692,8 +692,9 @@ munu.customers:
 munu.installations:
   domain: locations
   description: >
-    Physical store installations. 39 rows. Links terminals to revenue units.
-    Do NOT use directly for location analytics — use revenue_units instead.
+    Physical store installations. 39 rows. Required for waste-to-location joins
+    (terminals.inid -> installations.inid). Names use internal format ("Kanelsnurren Maxi")
+    vs revenue_units user-facing format ("KS Maxi Sandnes").
   row_count: 39
   primary_key: [customer_id, inid]
   columns:
@@ -888,7 +889,7 @@ munu.article_waste:
       type: VARCHAR
       description: >
         Terminal where waste was registered. FK to munu.terminals.
-        This is the path to location: waste -> terminal -> installation -> revenue_unit.
+        Location join path: waste -> terminals (terminal_id) -> installations (inid).
     inid:
       type: VARCHAR
       description: "Installation ID. May be null — use terminal_id for location joins instead."
@@ -920,21 +921,27 @@ munu.article_waste:
       type: VARCHAR
       description: "Source blob for traceability."
   joins:
-    to_location: |
-      -- Waste -> Terminal -> Installation -> Revenue Unit
+    to_location_via_map: |
+      -- Preferred: Waste -> terminal_location_map (resolves to revenue_unit_id)
+      JOIN analytics.terminal_location_map tlm ON tlm.customer_id = aw.customer_id AND tlm.terminal_id = aw.terminal_id
+    to_location_via_installations: |
+      -- Legacy: Waste -> Terminal -> Installation (for installation name)
       JOIN munu.terminals t ON t.customer_id = aw.customer_id AND t.terminal_id = aw.terminal_id
-      JOIN munu.revenue_units ru ON ru.customer_id = t.customer_id AND ru.inid = t.inid
+      JOIN munu.installations i ON i.customer_id = t.customer_id AND i.inid = t.inid
     to_articles_unified: "au.customer_id = aw.customer_id AND au.article_id = aw.article_id"
-    to_waste_reasons: "wr.customer_id = aw.customer_id AND wr.wrid = aw.waste_reason_id"
+    to_waste_reasons: "wr.customer_id = aw.customer_id AND wr.name = aw.reason"
   gotchas:
-    - "Location join goes through terminals, NOT directly to revenue_units."
+    - "Prefer analytics.daily_location_waste cube for waste trends/aggregates."
+    - "For raw waste queries, use analytics.terminal_location_map to resolve terminal_id to revenue_unit_id."
+    - "Do NOT join to revenue_units directly — revenue_units.inid is always NULL."
     - "~760K rows — always filter by waste_date."
-    - "For location exclusion, use terminal subquery (see location-exclusion docs)."
 
 
 munu.waste_reasons:
   domain: waste
-  description: "Waste reason codes. 12 rows. Low cardinality — good for grouping."
+  description: >
+    Waste reason codes. 12 rows. Usually not needed — article_waste.reason has
+    the reason text already denormalized. Only join if you need the wrid.
   row_count: 12
   primary_key: [customer_id, wrid]
   columns:
@@ -1873,15 +1880,15 @@ join_recipes:
       GROUP BY au.category, au.subcategory
 
   waste_by_location:
-    description: "Waste cost by store"
+    description: "Waste cost by store (via terminal_location_map for revenue_unit_id)"
     domains: [waste, locations]
     sql: |
-      SELECT ru.name AS location, SUM(aw.total_cost) AS waste_cost
+      SELECT tlm.location_name AS location, SUM(aw.total_cost) AS waste_cost
       FROM munu.article_waste aw
-      JOIN munu.terminals t ON aw.customer_id = t.customer_id AND aw.terminal_id = t.terminal_id
-      JOIN munu.revenue_units ru ON t.customer_id = ru.customer_id AND t.inid = ru.inid
+      JOIN analytics.terminal_location_map tlm
+        ON aw.customer_id = tlm.customer_id AND aw.terminal_id = tlm.terminal_id
       WHERE aw.waste_date BETWEEN ? AND ?
-      GROUP BY ru.name
+      GROUP BY tlm.location_name
 
   waste_by_product:
     description: "Waste by product with category"
@@ -1964,6 +1971,17 @@ join_recipes:
       WHERE ol.net_amount IS NOT NULL AND o.order_date BETWEEN ? AND ?
       GROUP BY o.order_date, w.temp_max, w.precipitation_mm
 
+  waste_by_location_analytics:
+    description: "Waste trends by store using analytics cube (preferred)"
+    domains: [analytics]
+    sql: |
+      SELECT location_name, waste_date,
+        SUM(waste_units) AS units, SUM(waste_cost) AS cost
+      FROM analytics.daily_location_waste
+      WHERE waste_date >= CURRENT_DATE - INTERVAL '3 months'
+      GROUP BY location_name, waste_date
+      ORDER BY waste_date, cost DESC
+
   location_vs_fleet:
     description: "Compare a location's trailing metrics to fleet benchmarks"
     domains: [analytics]
@@ -2038,8 +2056,9 @@ global_rules:
     Use: o.customer_id = ru.customer_id AND o.revenue_unit_id = ru.revenue_unit_id
 
   waste_location_join: >
-    Waste has no revenue_unit_id. Join path is:
-    article_waste -> terminals (on terminal_id) -> revenue_units (on inid)
+    For waste trends/aggregates, prefer analytics.daily_location_waste (has revenue_unit_id already).
+    For raw waste: JOIN analytics.terminal_location_map tlm ON aw.customer_id = tlm.customer_id AND aw.terminal_id = tlm.terminal_id.
+    Do NOT join waste to revenue_units directly — revenue_units.inid is always NULL.
 
   bundle_items: >
     Multi-item bundles create dual line items. For revenue: WHERE net_amount IS NOT NULL.
@@ -2495,3 +2514,326 @@ analytics.daypart_benchmarks:
     fleet_median:
       type: "DECIMAL(18,2)"
       description: "Fleet median."
+
+analytics.terminal_location_map:
+  domain: analytics
+  description: >
+    Terminal-to-location mapping. Maps waste terminal_ids to revenue_unit_ids.
+    ~40 rows. Support table for daily_location_waste.
+  row_count: 40
+  primary_key: [customer_id, terminal_id]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    terminal_id:
+      type: VARCHAR
+      description: "POS terminal ID."
+    revenue_unit_id:
+      type: VARCHAR
+      description: "Mapped revenue unit ID."
+    location_name:
+      type: VARCHAR
+      description: "Store name from revenue_units."
+  gotchas:
+    - "Support table — do not query directly. Used by daily_location_waste."
+
+analytics.daily_location_waste:
+  domain: analytics
+  description: >
+    Daily waste by location + product + reason. Pre-aggregated from article_waste
+    with revenue_unit_id resolved via terminal_location_map.
+    Same location_name / revenue_unit_id as daily_location_sales — use identical filters.
+  row_count: 200000
+  primary_key: [customer_id, revenue_unit_id, waste_date, article_name, reason]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    revenue_unit_id:
+      type: VARCHAR
+      description: "Store/location ID (same as sales cubes)."
+    location_name:
+      type: VARCHAR
+      description: "Denormalized store name (same as daily_location_sales)."
+    waste_date:
+      type: DATE
+      description: "Date waste was registered."
+    article_name:
+      type: VARCHAR
+      description: "Product name."
+    article_id:
+      type: VARCHAR
+      description: "Product identifier."
+    reason:
+      type: VARCHAR
+      description: "Waste reason (Slutt dag, Ødelagt, Utgått på dato, etc.)."
+    waste_units:
+      type: "DECIMAL(18,4)"
+      description: "Total quantity wasted."
+    waste_cost:
+      type: "DECIMAL(18,2)"
+      description: "Total waste cost in NOK."
+    waste_records:
+      type: INTEGER
+      description: "Number of waste registrations."
+    day_of_week:
+      type: INTEGER
+      description: "0=Sunday through 6=Saturday."
+    day_name:
+      type: VARCHAR
+      description: "Day name (Monday, Tuesday, etc.)."
+    week_number:
+      type: INTEGER
+      description: "ISO week number."
+    month_number:
+      type: INTEGER
+      description: "Month (1-12)."
+    year_number:
+      type: INTEGER
+      description: "Year."
+  gotchas:
+    - "Already pre-aggregated — do NOT join to terminals or installations."
+    - "Uses the same revenue_unit_id + location_name as sales cubes."
+    - "Filter by waste_date for time ranges, by article_name ILIKE for products."
+    - "For transaction-level detail, use munu.article_waste + analytics.terminal_location_map."
+
+
+analytics.daily_location_product:
+  domain: analytics
+  description: >
+    Daily product-level sales per location. One row per store per day per article.
+    Pre-filtered: committed orders, bundles excluded, net_amount IS NOT NULL.
+  row_count: 500000
+  primary_key: [customer_id, revenue_unit_id, order_date, article_id]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    revenue_unit_id:
+      type: VARCHAR
+      description: "Store/location ID."
+    order_date:
+      type: DATE
+      description: "Business date."
+    article_id:
+      type: VARCHAR
+      description: "Product identifier."
+    article_name:
+      type: VARCHAR
+      description: "Product name."
+    category:
+      type: VARCHAR
+      description: "Unified category from articles_unified."
+    subcategory:
+      type: VARCHAR
+      description: "Unified subcategory from articles_unified."
+    net_revenue:
+      type: "DECIMAL(18,2)"
+      description: "Net revenue for this product at this location on this day."
+    quantity_sold:
+      type: "DECIMAL(18,4)"
+      description: "Units sold."
+    avg_unit_price:
+      type: "DECIMAL(18,2)"
+      description: "Average unit price = net_revenue / quantity_sold."
+  gotchas:
+    - "Already pre-aggregated — do NOT join to order_lines."
+    - "Bundle SKUs and inactive categories already excluded."
+
+
+analytics.daily_location_group_mix:
+  domain: analytics
+  description: >
+    Daily product group mix per location. Shows revenue and quantity share
+    by group_set (category, subcategory) per store per day.
+    Derived from daily_location_product + product_group_definitions.
+  row_count: 200000
+  primary_key: [customer_id, revenue_unit_id, order_date, group_set, group_value]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    revenue_unit_id:
+      type: VARCHAR
+      description: "Store/location ID."
+    order_date:
+      type: DATE
+      description: "Business date."
+    group_set:
+      type: VARCHAR
+      description: "Grouping level: 'category' or 'subcategory'."
+    group_value:
+      type: VARCHAR
+      description: "Category/subcategory name."
+    net_revenue:
+      type: "DECIMAL(18,2)"
+      description: "Revenue for this group."
+    quantity_sold:
+      type: "DECIMAL(18,4)"
+      description: "Units sold for this group."
+    revenue_share_pct:
+      type: "DECIMAL(10,2)"
+      description: "% of location's daily revenue from this group."
+    quantity_share_pct:
+      type: "DECIMAL(10,2)"
+      description: "% of location's daily quantity from this group."
+  gotchas:
+    - "Already pre-aggregated — do NOT join to order_lines or articles."
+    - "Filter by group_set to choose analysis level."
+
+
+analytics.daily_fleet_group_mix:
+  domain: analytics
+  description: >
+    Daily product group mix aggregated across all locations (fleet-wide).
+    Same structure as daily_location_group_mix but across all stores.
+  row_count: 50000
+  primary_key: [customer_id, order_date, group_set, group_value]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    order_date:
+      type: DATE
+      description: "Business date."
+    group_set:
+      type: VARCHAR
+      description: "Grouping level: 'category' or 'subcategory'."
+    group_value:
+      type: VARCHAR
+      description: "Category/subcategory name."
+    net_revenue:
+      type: "DECIMAL(18,2)"
+      description: "Fleet-wide revenue for this group."
+    quantity_sold:
+      type: "DECIMAL(18,4)"
+      description: "Fleet-wide units sold."
+    location_count:
+      type: INTEGER
+      description: "Number of locations selling this group."
+    revenue_share_pct:
+      type: "DECIMAL(10,2)"
+      description: "% of fleet's daily revenue from this group."
+    quantity_share_pct:
+      type: "DECIMAL(10,2)"
+      description: "% of fleet's daily quantity from this group."
+  gotchas:
+    - "Fleet-level aggregate — no revenue_unit_id column."
+    - "Used by location_group_mix_trailing for fleet average comparison."
+
+
+analytics.daily_location_sick_leave:
+  domain: analytics
+  description: >
+    Daily sick leave metrics per location per absence category. Discovery-gated —
+    table only exists if Planday absence shift_types are found.
+    Grain: one row per store per day per absence category.
+  row_count: 10000
+  primary_key: [customer_id, revenue_unit_id, order_date, absence_category]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    revenue_unit_id:
+      type: VARCHAR
+      description: "Store/location ID."
+    location_name:
+      type: VARCHAR
+      description: "Denormalized store name."
+    order_date:
+      type: DATE
+      description: "Date of absence."
+    absence_category:
+      type: VARCHAR
+      description: "Type of absence."
+      values: ["egenmelding", "sykemelding", "child_sick", "other_absence"]
+    absence_hours:
+      type: "DECIMAL(10,2)"
+      description: "Total absence hours (from shift duration)."
+    absence_shifts:
+      type: INTEGER
+      description: "Number of absence shifts."
+    employees_absent:
+      type: INTEGER
+      description: "Distinct employees absent."
+    gross_salary_cost:
+      type: "DECIMAL(18,2)"
+      description: "Total salary cost of absent hours."
+    employer_borne_cost:
+      type: "DECIMAL(18,2)"
+      description: "Cost borne by employer (egenmelding, arbeidsgiverperioden)."
+    nav_borne_cost:
+      type: "DECIMAL(18,2)"
+      description: "Cost reimbursed by NAV (sykemelding day 17+), capped at 6G."
+    scheduled_hours:
+      type: "DECIMAL(10,2)"
+      description: "Scheduled hours from daily_location_labor (denominator for rate)."
+    sick_rate_pct:
+      type: "DECIMAL(10,2)"
+      description: "absence_hours / scheduled_hours * 100."
+  gotchas:
+    - "Discovery-gated — table only exists if absence data found in Planday."
+    - "sick_rate_pct uses scheduled_hours from daily_location_labor as denominator."
+    - "Excludes vacation — only includes sick leave and other absence categories."
+    - "Cost split: employer_borne_cost + nav_borne_cost <= gross_salary_cost."
+
+
+analytics.location_sick_leave_trailing:
+  domain: analytics
+  description: >
+    Rolling sick leave snapshot per location. Discovery-gated — table only exists
+    if absence data found. No date filter needed — shows trailing 28d/90d/365d rates.
+  row_count: 35
+  primary_key: [customer_id, revenue_unit_id]
+  columns:
+    customer_id:
+      type: INTEGER
+      description: "Outlet identifier."
+    revenue_unit_id:
+      type: VARCHAR
+      description: "Store/location ID."
+    location_name:
+      type: VARCHAR
+      description: "Denormalized store name."
+    trailing_28d_sick_rate_pct:
+      type: "DECIMAL(10,2)"
+      description: "Sick leave rate over last 28 days (%)."
+    trailing_90d_sick_rate_pct:
+      type: "DECIMAL(10,2)"
+      description: "Sick leave rate over last 90 days (%)."
+    trailing_365d_sick_rate_pct:
+      type: "DECIMAL(10,2)"
+      description: "Sick leave rate over last 365 days (%)."
+    sick_rate_drift_28d_vs_90d:
+      type: "DECIMAL(10,2)"
+      description: "28d rate minus 90d rate. Positive = worsening trend."
+    egenmelding_rate_pct_28d:
+      type: "DECIMAL(10,2)"
+      description: "Self-certified sick leave rate (28d)."
+    sykemelding_rate_pct_28d:
+      type: "DECIMAL(10,2)"
+      description: "Doctor-certified sick leave rate (28d)."
+    egenmelding_episodes_28d:
+      type: INTEGER
+      description: "Number of self-certified absence shifts in 28 days."
+    employer_borne_cost_28d:
+      type: "DECIMAL(18,2)"
+      description: "Employer sick leave cost over 28 days."
+    employer_borne_cost_90d:
+      type: "DECIMAL(18,2)"
+      description: "Employer sick leave cost over 90 days."
+    nav_borne_cost_28d:
+      type: "DECIMAL(18,2)"
+      description: "NAV-reimbursed cost over 28 days."
+    fleet_avg_sick_rate_pct:
+      type: "DECIMAL(10,2)"
+      description: "Average 28d sick rate across all locations."
+    sick_rate_vs_fleet_delta:
+      type: "DECIMAL(10,2)"
+      description: "This location's rate minus fleet average. Positive = worse than fleet."
+  gotchas:
+    - "Discovery-gated — table only exists if absence data found in Planday."
+    - "Snapshot table — no date filter needed."
+    - "Norwegian national average sick leave is ~6-7% for comparison."
+    - "Drift metric: positive sick_rate_drift_28d_vs_90d = worsening recent trend."
