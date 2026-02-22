@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 class Settings(BaseSettings):
-    anthropic_api_key: str
+    anthropic_api_key: str = ""
     motherduck_token: str
     motherduck_database: str = "KS2-Service Agent Read"
     claude_model: str = "claude-sonnet-4-5-20250929"
